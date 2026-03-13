@@ -2,7 +2,11 @@ import { readFileSync, existsSync } from "fs";
 import { resolve } from "path";
 import { analyzeTrace } from "@rag-doctor/core";
 import { diagnoseTrace } from "@rag-doctor/diagnostics";
-import { normalizeTrace, ParseError } from "@rag-doctor/parser";
+import {
+  ingestTrace,
+  TraceValidationError,
+  TraceParseError,
+} from "@rag-doctor/ingestion";
 import { printTerminalReport, printDiagnosisReport } from "@rag-doctor/reporters";
 import type { AnalysisResult } from "@rag-doctor/types";
 import type { DiagnosisResult } from "@rag-doctor/diagnostics";
@@ -99,17 +103,20 @@ ${bold("TRACE FORMAT")}
 `;
 }
 
-// ── Shared file loading ───────────────────────────────────────────────────────
+// ── Shared ingestion pipeline ─────────────────────────────────────────────────
 
 /**
- * Loads a trace file, parses JSON, normalizes, and runs analysis.
- * Exits via `io` on any error. Used by both analyze and diagnose commands.
+ * Reads a trace file from disk, parses it as JSON, then runs the shared
+ * ingestion pipeline (validate + normalize) and returns an AnalysisResult.
+ *
+ * All error paths print a user-friendly message and call io.exit(1).
+ * Used by both `analyze` and `diagnose` commands.
  */
-function loadAndAnalyze(filePath: string, io: CliIO): AnalysisResult {
+function loadAndAnalyze(filePath: string, flags: CliFlags, io: CliIO): AnalysisResult {
   const absolutePath = resolve(process.cwd(), filePath);
 
   if (!existsSync(absolutePath)) {
-    io.stderr(`Error: File not found: ${filePath}`);
+    emitError(io, flags, "File not found", filePath, null);
     io.exit(1);
   }
 
@@ -117,7 +124,7 @@ function loadAndAnalyze(filePath: string, io: CliIO): AnalysisResult {
   try {
     rawContent = readFileSync(absolutePath, "utf-8");
   } catch (err) {
-    io.stderr(`Error: Could not read file: ${filePath}\n${String(err)}`);
+    emitError(io, flags, "Could not read file", filePath, null);
     io.exit(1);
   }
 
@@ -125,23 +132,59 @@ function loadAndAnalyze(filePath: string, io: CliIO): AnalysisResult {
   try {
     rawJson = JSON.parse(rawContent);
   } catch {
-    io.stderr(`Error: ${filePath} is not valid JSON.`);
+    const parseErr = new TraceParseError(`${filePath} is not valid JSON.`, rawContent);
+    if (flags.json) {
+      io.stderr(
+        JSON.stringify(
+          { error: "TRACE_PARSE_ERROR", message: parseErr.message },
+          null,
+          2,
+        ),
+      );
+    } else {
+      io.stderr(`Error: ${parseErr.message}`);
+    }
     io.exit(1);
   }
 
   let trace;
   try {
-    trace = normalizeTrace(rawJson);
+    trace = ingestTrace(rawJson);
   } catch (err) {
-    if (err instanceof ParseError) {
-      const fieldHint = err.field ? ` (field: "${err.field}")` : "";
-      io.stderr(`Error: Invalid trace format: ${err.message}${fieldHint}`);
+    if (err instanceof TraceValidationError) {
+      if (flags.json) {
+        io.stderr(JSON.stringify(err.toPayload(), null, 2));
+      } else {
+        const issueLines = err.issues
+          .map((i) => `  • ${i.path}: expected ${i.expected}, got ${i.received}`)
+          .join("\n");
+        io.stderr(
+          `Error: Invalid trace format: ${err.message}${issueLines ? "\n" + issueLines : ""}`,
+        );
+      }
       io.exit(1);
     }
     throw err;
   }
 
   return analyzeTrace(trace);
+}
+
+/**
+ * Emits a formatted error for non-validation errors (file not found, read errors).
+ */
+function emitError(
+  io: CliIO,
+  flags: CliFlags,
+  message: string,
+  filePath: string,
+  _detail: unknown,
+): void {
+  if (flags.json) {
+    io.stderr(JSON.stringify({ error: message, file: filePath }, null, 2));
+  } else {
+    io.stderr(`Error: ${message}: ${filePath}`);
+  }
 }
 
 // ── Analyze command ───────────────────────────────────────────────────────────
@@ -151,7 +194,7 @@ export function runAnalyzeCommand(
   flags: CliFlags,
   io: CliIO,
 ): AnalysisResult {
-  const result = loadAndAnalyze(filePath, io);
+  const result = loadAndAnalyze(filePath, flags, io);
 
   if (flags.json) {
     io.stdout(JSON.stringify(result, null, 2));
@@ -174,7 +217,7 @@ export function runDiagnoseCommand(
   flags: CliFlags,
   io: CliIO,
 ): DiagnosisResult {
-  const analysisResult = loadAndAnalyze(filePath, io);
+  const analysisResult = loadAndAnalyze(filePath, flags, io);
   const diagnosis = diagnoseTrace(analysisResult);
 
   if (flags.json) {

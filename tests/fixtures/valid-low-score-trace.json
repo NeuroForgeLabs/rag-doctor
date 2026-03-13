@@ -1,0 +1,40 @@
+{
+  "query": "What is the best approach for retrieval-augmented generation?",
+  "retrievedChunks": [
+    {
+      "id": "c1",
+      "text": "Dense retrieval models outperform sparse retrieval on most benchmarks.",
+      "score": 0.32,
+      "source": "rag-survey.md"
+    },
+    {
+      "id": "c2",
+      "text": "Chunk size significantly affects retrieval quality in RAG pipelines.",
+      "score": 0.28,
+      "source": "rag-survey.md"
+    },
+    {
+      "id": "c3",
+      "text": "Hybrid retrieval combining sparse and dense methods often yields the best results.",
+      "score": 0.25,
+      "source": "rag-survey.md"
+    },
+    {
+      "id": "c4",
+      "text": "Reranking retrieved chunks before generation can significantly improve answer quality.",
+      "score": 0.22,
+      "source": "reranking-paper.md"
+    },
+    {
+      "id": "c5",
+      "text": "Query expansion techniques can help surface more relevant documents.",
+      "score": 0.20,
+      "source": "query-expansion.md"
+    }
+  ],
+  "finalAnswer": "There are multiple approaches to RAG, including dense and sparse retrieval.",
+  "metadata": {
+    "model": "gpt-3.5-turbo",
+    "retrievalStrategy": "dense"
+  }
+}

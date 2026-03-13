@@ -27,6 +27,7 @@
   "dependencies": {
     "@rag-doctor/core": "workspace:*",
     "@rag-doctor/diagnostics": "workspace:*",
+    "@rag-doctor/ingestion": "workspace:*",
     "@rag-doctor/parser": "workspace:*",
     "@rag-doctor/reporters": "workspace:*",
     "@rag-doctor/types": "workspace:*"

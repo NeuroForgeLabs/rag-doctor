@@ -1,0 +1,17 @@
+{
+  "query": "What is the speed of light?",
+  "retrievedChunks": [
+    {
+      "id": "c1",
+      "text": "The speed of light in vacuum is approximately 299,792,458 metres per second.",
+      "score": "very-high",
+      "source": "physics.md"
+    },
+    {
+      "id": "c2",
+      "text": "Light travels faster in vacuum than in any medium.",
+      "score": "0.92",
+      "source": "physics.md"
+    }
+  ]
+}

@@ -501,3 +501,116 @@ describe("runDiagnoseCommand", () => {
     }
   });
 });
+
+// ── Phase 2B: ingestion pipeline integration ──────────────────────────────────
+
+describe("run — analyze uses ingestion pipeline (Phase 2B)", () => {
+  it("produces field-level error details for invalid schema", () => {
+    const out = runCli(["analyze", fixture("invalid-schema.json")]);
+    expect(out.exitCode).toBe(1);
+    const errOut = out.stderr.join("\n");
+    expect(errOut).toContain("Invalid trace format");
+  });
+
+  it("exits 1 for invalid-missing-fields fixture", () => {
+    const out = runCli(["analyze", fixture("invalid-missing-fields.json")]);
+    expect(out.exitCode).toBe(1);
+    expect(out.stderr.join("\n")).toContain("Invalid trace format");
+  });
+
+  it("exits 1 for invalid-bad-score-type fixture", () => {
+    const out = runCli(["analyze", fixture("invalid-bad-score-type.json")]);
+    expect(out.exitCode).toBe(1);
+    expect(out.stderr.join("\n")).toContain("Invalid trace format");
+  });
+
+  it("exits 1 for invalid-malformed-chunks fixture", () => {
+    const out = runCli(["analyze", fixture("invalid-malformed-chunks.json")]);
+    expect(out.exitCode).toBe(1);
+    expect(out.stderr.join("\n")).toContain("Invalid trace format");
+  });
+
+  it("succeeds for valid-minimal-trace fixture", () => {
+    const out = runCli(["analyze", fixture("valid-minimal-trace.json")]);
+    expect(out.exitCode).toBeNull();
+    expect(out.stderr).toHaveLength(0);
+  });
+
+  it("exits 1 for valid-low-score-trace fixture (scores below threshold)", () => {
+    const out = runCli(["analyze", fixture("valid-low-score-trace.json")]);
+    expect(out.exitCode).toBe(1);
+    const plain = out.stdout.join("\n").replace(/\x1b\[[0-9;]*m/g, "");
+    expect(plain).toContain("HIGH");
+  });
+});
+
+describe("run — diagnose uses ingestion pipeline (Phase 2B)", () => {
+  it("exits 1 for invalid-missing-fields fixture", () => {
+    const out = runCli(["diagnose", fixture("invalid-missing-fields.json")]);
+    expect(out.exitCode).toBe(1);
+    expect(out.stderr.join("\n")).toContain("Invalid trace format");
+  });
+
+  it("exits 1 for invalid-bad-score-type fixture", () => {
+    const out = runCli(["diagnose", fixture("invalid-bad-score-type.json")]);
+    expect(out.exitCode).toBe(1);
+    expect(out.stderr.join("\n")).toContain("Invalid trace format");
+  });
+
+  it("succeeds for valid-minimal-trace fixture", () => {
+    const out = runCli(["diagnose", fixture("valid-minimal-trace.json")]);
+    expect(out.exitCode).toBeNull();
+    expect(out.stderr).toHaveLength(0);
+  });
+});
+
+describe("run — --json error output mode (Phase 2B)", () => {
+  it("--json mode outputs structured JSON to stderr for invalid JSON file", () => {
+    const out = runCli(["analyze", fixture("invalid-json.txt"), "--json"]);
+    expect(out.exitCode).toBe(1);
+    const errOut = out.stderr.join("\n");
+    expect(() => JSON.parse(errOut)).not.toThrow();
+    const parsed = JSON.parse(errOut) as { error: string };
+    expect(parsed.error).toBeDefined();
+  });
+
+  it("--json mode outputs INVALID_TRACE_SCHEMA payload to stderr for invalid schema", () => {
+    const out = runCli(["analyze", fixture("invalid-schema.json"), "--json"]);
+    expect(out.exitCode).toBe(1);
+    const errOut = out.stderr.join("\n");
+    expect(() => JSON.parse(errOut)).not.toThrow();
+    const parsed = JSON.parse(errOut) as { code: string; issues: unknown[] };
+    expect(parsed.code).toBe("INVALID_TRACE_SCHEMA");
+    expect(Array.isArray(parsed.issues)).toBe(true);
+    expect(parsed.issues.length).toBeGreaterThan(0);
+  });
+
+  it("--json mode schema error payload includes field paths", () => {
+    const out = runCli(["analyze", fixture("invalid-missing-fields.json"), "--json"]);
+    expect(out.exitCode).toBe(1);
+    const payload = JSON.parse(out.stderr.join("\n")) as {
+      issues: Array<{ path: string }>;
+    };
+    const paths = payload.issues.map((i) => i.path);
+    expect(paths.some((p) => p === "query" || p === "retrievedChunks")).toBe(true);
+  });
+
+  it("--json mode schema error payload for bad score type includes score path", () => {
+    const out = runCli(["analyze", fixture("invalid-bad-score-type.json"), "--json"]);
+    expect(out.exitCode).toBe(1);
+    const payload = JSON.parse(out.stderr.join("\n")) as {
+      issues: Array<{ path: string; expected: string; received: string }>;
+    };
+    const scoreIssue = payload.issues.find((i) => i.path.includes("score"));
+    expect(scoreIssue).toBeDefined();
+    expect(scoreIssue?.expected).toBe("number");
+    expect(scoreIssue?.received).toBe("string");
+  });
+
+  it("--json mode diagnose outputs INVALID_TRACE_SCHEMA for invalid schema", () => {
+    const out = runCli(["diagnose", fixture("invalid-schema.json"), "--json"]);
+    expect(out.exitCode).toBe(1);
+    const payload = JSON.parse(out.stderr.join("\n")) as { code: string };
+    expect(payload.code).toBe("INVALID_TRACE_SCHEMA");
+  });
+});

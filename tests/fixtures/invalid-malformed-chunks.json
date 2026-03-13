@@ -1,0 +1,15 @@
+{
+  "query": "What is machine learning?",
+  "retrievedChunks": [
+    "this is a string, not an object",
+    null,
+    {
+      "id": "",
+      "text": 12345
+    },
+    {
+      "text": "Missing id field entirely"
+    },
+    ["nested", "array", "instead", "of", "object"]
+  ]
+}

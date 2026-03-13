@@ -1,0 +1,11 @@
+{
+  "query": "What is the boiling point of water?",
+  "retrievedChunks": [
+    {
+      "id": "c1",
+      "text": "Water boils at 100 degrees Celsius at standard atmospheric pressure.",
+      "score": 0.95,
+      "source": "chemistry-basics.md"
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "notAQuery": "This object is missing the required query field",
+  "chunks": [
+    { "content": "wrong field name for text", "relevance": 0.9 }
+  ]
+}

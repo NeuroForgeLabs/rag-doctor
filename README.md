@@ -105,7 +105,18 @@ npx rag-doctor analyze examples/low-score-trace.json
 
 ## 📋 Trace Format
 
-RAG Doctor expects a JSON file with the following shape:
+A trace file is a JSON snapshot of a single RAG pipeline execution — the query, the retrieved chunks, the generated answer, and any metadata your system provides.
+
+### Minimal valid trace
+
+```json
+{
+  "query": "How do I reset my password?",
+  "retrievedChunks": []
+}
+```
+
+### Full trace with all optional fields
 
 ```json
 {
@@ -126,18 +137,62 @@ RAG Doctor expects a JSON file with the following shape:
 }
 ```
 
+### Field reference
+
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `query` | string | ✓ | The original user query |
+| `query` | string | ✓ | The original user query — must be non-empty |
 | `retrievedChunks` | array | ✓ | Chunks retrieved from the vector store |
-| `retrievedChunks[].id` | string | ✓ | Unique chunk identifier |
+| `retrievedChunks[].id` | string | ✓ | Unique chunk identifier — must be non-empty |
 | `retrievedChunks[].text` | string | ✓ | Raw text content |
-| `retrievedChunks[].score` | number | — | Relevance score (0–1) |
+| `retrievedChunks[].score` | number | — | Relevance score (typically 0–1, must be finite) |
 | `retrievedChunks[].source` | string | — | Source document reference |
 | `finalAnswer` | string | — | The generated LLM answer |
 | `metadata` | object | — | Optional metadata (model names, timestamps, etc.) |
 
 > **Tip:** `score` is optional but recommended. Rules like `low-retrieval-score` are skipped entirely if no chunks have scores — there are no false positives on unscored traces.
+
+### How validation works
+
+Every trace goes through the shared `@rag-doctor/ingestion` pipeline before analysis:
+
+1. **Schema validation** — all required fields are present and have the correct types. All issues are collected in a single pass so you see every problem at once.
+2. **Normalization** — the validated object is converted into a canonical `NormalizedTrace`: query whitespace is trimmed, optional arrays default to `[]`, and unknown extra fields are silently ignored.
+
+If validation fails, RAG Doctor exits with a structured error:
+
+```
+Error: Invalid trace format: Trace validation failed
+  • retrievedChunks[1].score: expected number, got string
+  • retrievedChunks[2].id: expected non-empty string, got missing
+```
+
+In `--json` mode, the error is a machine-readable payload:
+
+```json
+{
+  "code": "INVALID_TRACE_SCHEMA",
+  "message": "Trace validation failed",
+  "issues": [
+    {
+      "path": "retrievedChunks[1].score",
+      "expected": "number",
+      "received": "string"
+    }
+  ]
+}
+```
+
+### Common validation errors
+
+| Error | Cause |
+|---|---|
+| `query: expected non-empty string, got missing` | The `query` field is absent or null |
+| `query: expected non-empty string, got empty string` | The query is whitespace-only |
+| `retrievedChunks: expected array, got missing` | The `retrievedChunks` field is absent |
+| `retrievedChunks[N].id: expected non-empty string, got missing` | A chunk is missing its `id` |
+| `retrievedChunks[N].score: expected number, got string` | A score was provided as a quoted string instead of a number |
+| `retrievedChunks[N].score: expected finite number, got Infinity` | A score is `Infinity` or `NaN` |
 
 ---
 
@@ -480,7 +535,36 @@ const result = analyzeTrace(trace, {
 
 ## 🔌 Programmatic Usage
 
-The core engine has zero CLI dependencies and can be embedded anywhere:
+The core engine has zero CLI dependencies and can be embedded anywhere.
+
+### Using the shared ingestion pipeline (recommended)
+
+```typescript
+import { ingestTrace, TraceValidationError } from "@rag-doctor/ingestion";
+import { analyzeTrace } from "@rag-doctor/core";
+import fs from "fs";
+
+const rawJson = JSON.parse(fs.readFileSync("trace.json", "utf-8"));
+
+try {
+  const trace = ingestTrace(rawJson);  // validates + normalizes
+  const result = analyzeTrace(trace);
+  console.log(result.summary);   // { high: 1, medium: 0, low: 0 }
+  console.log(result.findings);  // DiagnosticFinding[]
+} catch (err) {
+  if (err instanceof TraceValidationError) {
+    // Structured, field-level error payload
+    console.error(JSON.stringify(err.toPayload(), null, 2));
+    // {
+    //   "code": "INVALID_TRACE_SCHEMA",
+    //   "message": "Trace validation failed",
+    //   "issues": [{ "path": "retrievedChunks[0].score", "expected": "number", "received": "string" }]
+    // }
+  }
+}
+```
+
+### Using lower-level packages
 
 ```typescript
 import { analyzeTrace } from "@rag-doctor/core";
@@ -520,9 +604,11 @@ rag-doctor/
 │   └── cli/              # 📟 CLI entry point (published as `rag-doctor`)
 ├── packages/
 │   ├── types/            # 📐 Shared TypeScript interfaces
-│   ├── parser/           # 🔍 Trace normalizer & validator
+│   ├── ingestion/        # 🔒 Shared trace ingestion pipeline (validate + normalize)
+│   ├── parser/           # 🔍 Trace normalizer & validator (legacy, used by ingestion)
 │   ├── rules/            # 📏 Built-in diagnostic rules
 │   ├── core/             # ⚙️  Analysis engine (zero I/O dependencies)
+│   ├── diagnostics/      # 🧠 Root cause analysis engine
 │   └── reporters/        # 🖨️  Terminal and future reporters
 ├── tests/
 │   └── fixtures/         # 🧪 Shared JSON fixtures for tests
@@ -573,17 +659,22 @@ pnpm --filter rag-doctor test
 
 Fixture JSON files live in `tests/fixtures/`:
 
-| File | Triggers |
-|---|---|
-| `valid-basic-trace.json` | Nothing — clean full trace with all optional fields |
-| `valid-clean-trace.json` | Nothing — minimal clean trace |
-| `broken-low-score-trace.json` | `low-retrieval-score` (HIGH) — avg score ≈ 0.22 |
-| `broken-duplicate-trace.json` | `duplicate-chunks` (MEDIUM) — 3 identical chunks |
-| `context-overload-trace.json` | `context-overload` (MEDIUM) — 12 retrieved chunks |
-| `oversized-chunk-trace.json` | `oversized-chunk` (LOW) — one chunk > 1200 chars |
-| `multi-rule-trace.json` | `low-retrieval-score` + `duplicate-chunks` + `context-overload` simultaneously |
-| `invalid-json.txt` | Parse error — not valid JSON |
-| `invalid-schema.json` | Schema error — valid JSON but wrong shape |
+| File | Category | Triggers |
+|---|---|---|
+| `valid-clean-trace.json` | Valid | Nothing — minimal clean trace (2 high-score chunks) |
+| `valid-basic-trace.json` | Valid | Nothing — clean full trace with all optional fields |
+| `valid-minimal-trace.json` | Valid | Nothing — one chunk, no optional fields |
+| `valid-low-score-trace.json` | Valid | `low-retrieval-score` (HIGH) — valid trace with low scores |
+| `broken-low-score-trace.json` | Valid | `low-retrieval-score` (HIGH) — avg score ≈ 0.22 |
+| `broken-duplicate-trace.json` | Valid | `duplicate-chunks` (MEDIUM) — 3 identical chunks |
+| `context-overload-trace.json` | Valid | `context-overload` (MEDIUM) — 12 retrieved chunks |
+| `oversized-chunk-trace.json` | Valid | `oversized-chunk` (LOW) — one chunk > 1200 chars |
+| `multi-rule-trace.json` | Valid | `low-retrieval-score` + `duplicate-chunks` + `context-overload` simultaneously |
+| `invalid-json.txt` | Invalid | Parse error — not valid JSON |
+| `invalid-schema.json` | Invalid | Schema error — valid JSON but wrong field names |
+| `invalid-missing-fields.json` | Invalid | Schema error — missing `query` and `retrievedChunks` |
+| `invalid-bad-score-type.json` | Invalid | Schema error — scores provided as strings instead of numbers |
+| `invalid-malformed-chunks.json` | Invalid | Schema error — chunks array contains primitives, nulls, nested arrays |
 
 ### CLI test architecture
 

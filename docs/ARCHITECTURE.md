@@ -11,6 +11,7 @@ This document describes the design decisions, package responsibilities, data flo
 3. [Package Dependency Graph](#package-dependency-graph)
 4. [Package Reference](#package-reference)
    - [@rag-doctor/types](#rag-doctortypes)
+   - [@rag-doctor/ingestion](#rag-doctoringestion)
    - [@rag-doctor/parser](#rag-doctorparser)
    - [@rag-doctor/rules](#rag-doctorrules)
    - [@rag-doctor/core](#rag-doctorcore)
@@ -63,7 +64,20 @@ rag-doctor/
 │   │   ├── tsconfig.json
 │   │   └── tsup.config.ts
 │   │
-│   ├── parser/                  # @rag-doctor/parser     — input normalization
+│   ├── ingestion/               # @rag-doctor/ingestion  — shared trace ingestion pipeline (Phase 2B)
+│   │   └── src/
+│   │       ├── ingestion-types.ts
+│   │       ├── errors.ts
+│   │       ├── validate-trace.ts
+│   │       ├── normalize-trace.ts
+│   │       ├── ingest-trace.ts
+│   │       ├── index.ts
+│   │       └── __tests__/
+│   │           ├── validate-trace.test.ts
+│   │           ├── normalize-trace.test.ts
+│   │           └── ingest-trace.test.ts
+│   │
+│   ├── parser/                  # @rag-doctor/parser     — legacy input normalization
 │   │   └── src/
 │   │       ├── errors.ts
 │   │       ├── normalize.ts
@@ -107,13 +121,18 @@ rag-doctor/
 │   └── fixtures/                # Shared JSON fixtures for CLI tests
 │       ├── valid-basic-trace.json
 │       ├── valid-clean-trace.json
+│       ├── valid-minimal-trace.json
+│       ├── valid-low-score-trace.json
 │       ├── broken-low-score-trace.json
 │       ├── broken-duplicate-trace.json
 │       ├── context-overload-trace.json
 │       ├── oversized-chunk-trace.json
 │       ├── multi-rule-trace.json
 │       ├── invalid-json.txt
-│       └── invalid-schema.json
+│       ├── invalid-schema.json
+│       ├── invalid-missing-fields.json
+│       ├── invalid-bad-score-type.json
+│       └── invalid-malformed-chunks.json
 │
 ├── examples/
 │   ├── basic-trace.json
@@ -141,6 +160,10 @@ Arrows represent `import` dependencies (pointing from consumer to dependency).
 ```
 rag-doctor (CLI)
     │
+    ├──▶ @rag-doctor/ingestion          ← Phase 2B: shared ingestion pipeline
+    │         │
+    │         └──▶ @rag-doctor/types
+    │
     ├──▶ @rag-doctor/core
     │         │
     │         ├──▶ @rag-doctor/rules
@@ -153,10 +176,6 @@ rag-doctor (CLI)
     │         │
     │         └──▶ @rag-doctor/types
     │
-    ├──▶ @rag-doctor/parser
-    │         │
-    │         └──▶ @rag-doctor/types
-    │
     └──▶ @rag-doctor/reporters
               │
               ├──▶ @rag-doctor/diagnostics
@@ -166,10 +185,13 @@ rag-doctor (CLI)
               └──▶ @rag-doctor/types
 ```
 
+`@rag-doctor/parser` is still present in the monorepo (consumed by CLI as a legacy dependency) but the shared ingestion pipeline (`@rag-doctor/ingestion`) is the **primary** entry point for all new consumers.
+
 **Key rules:**
 
-- `@rag-doctor/core` has **no dependency on the CLI, parser, diagnostics, or reporters**. It only depends on `rules` and `types`. It is safe to embed in any host environment.
-- `@rag-doctor/diagnostics` depends only on `@rag-doctor/types`. It does **not** depend on `core`, `parser`, `reporters`, or the CLI. It accepts a plain `AnalysisResult` object and is therefore embeddable anywhere.
+- `@rag-doctor/ingestion` depends **only on `@rag-doctor/types`**. It has no dependency on `parser`, `core`, `diagnostics`, `reporters`, or the CLI. It is pure, deterministic, and safe to embed in any host environment — browser, VS Code extension, serverless function, or CLI.
+- `@rag-doctor/core` has **no dependency on the CLI, ingestion, parser, diagnostics, or reporters**. It only depends on `rules` and `types`.
+- `@rag-doctor/diagnostics` depends only on `@rag-doctor/types`. It accepts a plain `AnalysisResult` object and is therefore embeddable anywhere.
 - `@rag-doctor/reporters` depends on `@rag-doctor/diagnostics` so it can type-check the `DiagnosisResult` parameter of `printDiagnosisReport`. This is a one-way type dependency only.
 
 ---
@@ -196,24 +218,96 @@ rag-doctor (CLI)
 
 ---
 
-### @rag-doctor/parser
+### @rag-doctor/ingestion
 
-**Role:** Converts arbitrary JSON input into a validated, typed `NormalizedTrace`. This is the only package that knows about raw input formats.
+**Role:** The shared trace ingestion pipeline. Accepts arbitrary parsed JSON input, validates it against the trace schema, and normalizes it into a canonical `NormalizedTrace`. This is the single authoritative entry point for both the CLI and future SDK consumers (Phase 2B).
 
 **Exports:**
 
 | Symbol | Kind | Description |
 |---|---|---|
-| `normalizeTrace(input: unknown)` | function | Validates and normalizes raw trace JSON |
+| `ingestTrace(input)` | function | Validates + normalizes in one call; the primary API |
+| `validateTrace(input)` | function | Schema validation only; throws `TraceValidationError` with all issues |
+| `normalizeTrace(input)` | function | Normalization only; precondition: must have passed `validateTrace` |
+| `TraceParseError` | class | For JSON.parse failures; carries `rawInput` |
+| `TraceValidationError` | class | For schema violations; carries `issues[]` and `.toPayload()` |
+| `TraceNormalizationError` | class | For rare post-validation normalization failures; carries `field` |
+| `RawTraceInput` | type | `unknown` — the raw input type |
+| `ValidationIssue` | interface | `{ path, expected, received }` — one field-level issue |
+| `ValidationErrorPayload` | interface | The structured JSON error shape output in `--json` mode |
+| `IngestionResult` | type | Alias for `NormalizedTrace` |
+
+**Design decisions:**
+
+- Depends **only on `@rag-doctor/types`** — no Node.js built-ins, no file I/O, no CLI concerns. Safe to import in any environment.
+- **Collect-all validation:** `validateTrace` collects every schema violation in a single pass before throwing. The caller receives a complete error report rather than one issue at a time.
+- **Separation of validate and normalize:** Validation and normalization are separate, composable functions. `ingestTrace` is a convenience wrapper that calls both in sequence. Advanced consumers (e.g. a future format adapter) can call each step individually.
+- **Typed, structured errors:** Each error class carries machine-readable metadata. `TraceValidationError.toPayload()` returns the `INVALID_TRACE_SCHEMA` JSON object that `--json` mode writes to stderr.
+- **Non-destructive normalization:** The normalizer never silently coerces ambiguous input into a different meaning. It trims query whitespace, defaults missing optional arrays to `[]`, and preserves all other values exactly as provided. Invalid values that slip through are dropped defensively (e.g. non-finite scores), not guessed at.
+
+**Validation rules (field-level):**
+
+| Field | Rule |
+|---|---|
+| `query` | Required non-empty string (whitespace-only is rejected) |
+| `retrievedChunks` | Required array (may be empty) |
+| `retrievedChunks[n]` | Must be a plain object (not null, not array, not primitive) |
+| `retrievedChunks[n].id` | Required non-empty string |
+| `retrievedChunks[n].text` | Required string (empty string is allowed) |
+| `retrievedChunks[n].score` | Optional finite number (rejects `Infinity`, `NaN`, and string representations) |
+| `retrievedChunks[n].source` | Optional string |
+| `finalAnswer` | Optional string when present |
+| `metadata` | Optional plain object; silently skipped if null, array, or non-object |
+
+**Normalization rules:**
+
+| Input | Normalized form |
+|---|---|
+| `query` with leading/trailing whitespace | Trimmed |
+| Missing `retrievedChunks` (post-validation defense) | Defaults to `[]` |
+| Chunk `score` not present | Omitted from output |
+| Chunk `source` not present | Omitted from output |
+| `finalAnswer` not present or null | Omitted from output |
+| `metadata` not a plain object | Omitted from output |
+| Chunk with non-finite `score` (e.g. `Infinity`) | `score` omitted from output |
+
+**Error payload shape (for `--json` mode):**
+
+```json
+{
+  "code": "INVALID_TRACE_SCHEMA",
+  "message": "Trace validation failed",
+  "issues": [
+    {
+      "path": "retrievedChunks[1].score",
+      "expected": "number",
+      "received": "string"
+    }
+  ]
+}
+```
+
+---
+
+### @rag-doctor/parser
+
+**Role:** Legacy trace normalizer. Converts arbitrary JSON input into a validated, typed `NormalizedTrace` using a fail-fast (single-issue) validation strategy. Superseded by `@rag-doctor/ingestion` for new consumers but retained for backward compatibility.
+
+> **Note (Phase 2B):** The CLI now uses `@rag-doctor/ingestion` rather than `@rag-doctor/parser` for its ingestion step. `@rag-doctor/parser` remains in the monorepo and is still a direct dependency of the CLI (via its `package.json`) but is no longer invoked in the hot path. Future versions may deprecate or remove it once all consumers have migrated.
+
+**Exports:**
+
+| Symbol | Kind | Description |
+|---|---|---|
+| `normalizeTrace(input: unknown)` | function | Validates and normalizes raw trace JSON (fail-fast: throws on first error) |
 | `ParseError` | class | Thrown when validation fails; includes `field` for the offending field |
 
 **Design decisions:**
 
-- `input` is typed as `unknown`, forcing explicit validation of every field before use.
+- Uses a fail-fast strategy — throws on the first validation error encountered. This differs from `@rag-doctor/ingestion` which collects all issues in one pass.
 - All validation errors throw `ParseError` (not generic `Error`) so callers can distinguish parse failures from unexpected exceptions.
-- Three internal assertion helpers (`assertObject`, `assertString`, `assertArray`) are defined in `errors.ts` and used throughout `normalize.ts` to keep validation code concise.
 - The function is synchronous and has zero side effects — no file I/O, no logging.
-- Future trace formats (e.g. LangSmith, LlamaIndex, Haystack) are isolated here. Adding a new format means adding a new normalizer function without touching the engine or rules.
+- Future trace formats (e.g. LangSmith, LlamaIndex, Haystack) are better handled via `@rag-doctor/ingestion` adapters.
 
 **Validation rules:**
 
@@ -458,7 +552,7 @@ Colors are implemented as inline ANSI escape sequences in `src/ansi.ts` — no e
 
 ### rag-doctor (CLI)
 
-**Role:** User-facing command-line tool. Wires together parser → core → diagnostics → reporters and handles all process-level concerns (argv, file I/O, exit codes).
+**Role:** User-facing command-line tool. Wires together ingestion → core → diagnostics → reporters and handles all process-level concerns (argv, file I/O, exit codes).
 
 **Binary:** `rag-doctor` (registered in `package.json` `bin` field, pointing to `dist/bin.js`)
 
@@ -484,18 +578,29 @@ Production code uses `processIO` (backed by `process.stdout`, `process.stderr`, 
 
 **Shared file-loading helper (`loadAndAnalyze`):**
 
-Both `analyze` and `diagnose` commands share a single internal helper that encapsulates the common file-load pipeline. This eliminates duplication and ensures error handling is identical across both commands:
+Both `analyze` and `diagnose` commands share a single internal helper that encapsulates the complete file-load and ingestion pipeline. This eliminates duplication and ensures error handling is identical across both commands:
 
 ```
-loadAndAnalyze(filePath, io):
+loadAndAnalyze(filePath, flags, io):
   1. resolve absolute path from cwd
   2. check file existence → exit 1 with "File not found" error if missing
   3. readFileSync → exit 1 if unreadable
-  4. JSON.parse → exit 1 if not valid JSON
-  5. normalizeTrace() → exit 1 with ParseError message if invalid
+  4. JSON.parse → exit 1 with TraceParseError if not valid JSON
+     (in --json mode: writes { "error": "TRACE_PARSE_ERROR", ... } to stderr)
+  5. ingestTrace() [validate + normalize via @rag-doctor/ingestion]
+     → exit 1 with field-level error list if validation fails
+     (in --json mode: writes INVALID_TRACE_SCHEMA payload to stderr)
   6. analyzeTrace()
   7. return AnalysisResult
 ```
+
+**Error output modes:**
+
+| Error type | Terminal output | `--json` output (stderr) |
+|---|---|---|
+| File not found | `Error: File not found: <path>` | `{ "error": "File not found", "file": "<path>" }` |
+| Invalid JSON | `Error: <file> is not valid JSON.` | `{ "error": "TRACE_PARSE_ERROR", "message": "..." }` |
+| Schema validation | `Error: Invalid trace format: ...\n  • field: expected X, got Y` | `{ "code": "INVALID_TRACE_SCHEMA", "issues": [...] }` |
 
 **`analyze` command execution flow:**
 
@@ -548,7 +653,9 @@ apps/cli  ──readFileSync──▶  raw string
                 ▼
           raw unknown object
                 │
-                │  normalizeTrace()       @rag-doctor/parser
+                │  ingestTrace()          @rag-doctor/ingestion
+                │  (validateTrace +       ↳ throws TraceValidationError
+                │   normalizeTrace)         with field-level issues
                 ▼
           NormalizedTrace
                 │
@@ -575,16 +682,16 @@ User
   ▼
 apps/cli  ──readFileSync──▶  raw string
                 │
-                │  JSON.parse + normalizeTrace()   @rag-doctor/parser
+                │  JSON.parse + ingestTrace()   @rag-doctor/ingestion
                 ▼
           NormalizedTrace
                 │
-                │  analyzeTrace()                  @rag-doctor/core
+                │  analyzeTrace()               @rag-doctor/core
                 ▼
           AnalysisResult
          { findings[], summary }
                 │
-                │  diagnoseTrace()                 @rag-doctor/diagnostics
+                │  diagnoseTrace()              @rag-doctor/diagnostics
                 ▼
           DiagnosisResult
     { primaryCause, contributingCauses,
@@ -594,9 +701,32 @@ apps/cli  ──readFileSync──▶  raw string
          │             │
   --json flag      terminal
          │             │
-  JSON to stdout  printDiagnosisReport()           @rag-doctor/reporters
+  JSON to stdout  printDiagnosisReport()        @rag-doctor/reporters
                         │
                    ANSI output to stdout
+```
+
+### Error flow (validation failure)
+
+```
+raw unknown object
+        │
+        │  ingestTrace()                  @rag-doctor/ingestion
+        ▼
+TraceValidationError (thrown)
+  .issues = [{ path, expected, received }, ...]
+        │
+   ┌────┴────┐
+   │         │
+terminal   --json
+   │         │
+"Error:     stderr: { "code": "INVALID_TRACE_SCHEMA",
+  Invalid     "issues": [...] }
+  trace
+  format:
+  • field: ..."
+        │
+   io.exit(1)
 ```
 
 ---
@@ -750,35 +880,44 @@ export default defineConfig({
 
 ## Testing Strategy
 
-All tests use **Vitest**. The suite contains approximately 367 tests across eight test files.
+All tests use **Vitest**. The suite contains approximately 430 tests across eleven test files.
 
 | Package | Test file | Tests | Coverage |
 |---|---|---|---|
-| `parser` | `normalize.test.ts` | ~50 | Valid input, field trimming, missing fields, type errors, optional fields, score edge cases (Infinity, NaN, 0, 1), metadata passthrough and silent-ignore, `ParseError` properties |
+| `ingestion` | `validate-trace.test.ts` | ~35 | Valid traces, missing fields, wrong primitive types, malformed arrays, nested chunk errors, collect-all behavior, error structure |
+| `ingestion` | `normalize-trace.test.ts` | ~22 | Query trimming, stable output, optional field preservation/omission, chunk field pass-through, no over-coercion, non-finite score drop |
+| `ingestion` | `ingest-trace.test.ts` | ~20 | Valid input → canonical trace, invalid input → `TraceValidationError`, malformed objects, `toPayload()` structure, determinism |
+| `parser` | `normalize.test.ts` | ~50 | Valid input, field trimming, missing fields, type errors, optional fields, score edge cases (Infinity, NaN, 0, 1), metadata passthrough, `ParseError` properties |
 | `rules` | `rules.test.ts` | ~56 | Each rule: fires / does not fire, correct severity, threshold boundaries, structured `details` fields, edge cases (empty list, single chunk, no scores) |
 | `core` | `engine.test.ts` | ~23 | Default rules, custom rule injection, empty rule set, summary correctness, real rule scenarios against fixtures |
 | `diagnostics` | `root-cause-analyzer.test.ts` | ~29 | All four heuristic mappings, multi-finding with primary + contributing, no findings, unknown rule ID, determinism |
 | `reporters` | `terminal.reporter.test.ts` | ~29 | Output structure, zero-findings path, severity labels, sort order, recommendation rendering, injectable `write` |
 | `reporters` | `diagnosis.reporter.test.ts` | ~23 | Header, confidence labels, primary cause, contributing causes, evidence, recommendations, healthy path, injectable `write` |
-| `cli` (unit) | `cli.test.ts` | ~98 | `parseArgs`, `buildHelpText`, all `analyze` and `diagnose` command paths, all error paths, `--json` mode, exit codes, in-process via `CliIO` injection |
+| `cli` (unit) | `cli.test.ts` | ~77 | `parseArgs`, `buildHelpText`, all `analyze` and `diagnose` command paths, all error paths, `--json` mode, exit codes, ingestion pipeline integration, field-level error details, structured JSON error output |
 | `cli` (integration) | `cli.integration.test.ts` | ~35 | End-to-end subprocess via `spawnSync`; skipped unless `dist/bin.js` exists (`describe.skipIf`) |
 
 **Test fixtures** (`tests/fixtures/`):
 
-| File | Triggers |
-|---|---|
-| `valid-basic-trace.json` | Nothing (clean trace with high scores) |
-| `valid-clean-trace.json` | Nothing (minimal clean trace) |
-| `broken-low-score-trace.json` | `low-retrieval-score` (HIGH) — avg ≈ 0.22 |
-| `broken-duplicate-trace.json` | `duplicate-chunks` (MEDIUM) — 3 identical chunks |
-| `context-overload-trace.json` | `context-overload` (MEDIUM) — 12 chunks |
-| `oversized-chunk-trace.json` | `oversized-chunk` (LOW) — one chunk > 1200 chars |
-| `multi-rule-trace.json` | `low-retrieval-score` + `duplicate-chunks` + `context-overload` |
-| `invalid-json.txt` | Parse error (not valid JSON) |
-| `invalid-schema.json` | Schema error (valid JSON, wrong shape) |
+| File | Category | Triggers |
+|---|---|---|
+| `valid-basic-trace.json` | Valid | Nothing — clean full trace with all optional fields |
+| `valid-clean-trace.json` | Valid | Nothing — minimal clean trace with 2 high-score chunks |
+| `valid-minimal-trace.json` | Valid | Nothing — one chunk, no optional fields |
+| `valid-low-score-trace.json` | Valid | `low-retrieval-score` (HIGH) — structurally valid with low scores |
+| `broken-low-score-trace.json` | Valid | `low-retrieval-score` (HIGH) — avg score ≈ 0.22 |
+| `broken-duplicate-trace.json` | Valid | `duplicate-chunks` (MEDIUM) — 3 identical chunks |
+| `context-overload-trace.json` | Valid | `context-overload` (MEDIUM) — 12 chunks |
+| `oversized-chunk-trace.json` | Valid | `oversized-chunk` (LOW) — one chunk > 1200 chars |
+| `multi-rule-trace.json` | Valid | `low-retrieval-score` + `duplicate-chunks` + `context-overload` |
+| `invalid-json.txt` | Invalid | Parse error — not valid JSON |
+| `invalid-schema.json` | Invalid | Schema error — valid JSON but wrong field names |
+| `invalid-missing-fields.json` | Invalid | Schema error — missing `query` and `retrievedChunks` entirely |
+| `invalid-bad-score-type.json` | Invalid | Schema error — scores provided as strings instead of numbers |
+| `invalid-malformed-chunks.json` | Invalid | Schema error — chunks array contains primitives, nulls, and nested arrays |
 
 **Testing philosophy:**
 
+- The ingestion package (`@rag-doctor/ingestion`) is tested as three independent layers: validator, normalizer, and the combined `ingestTrace` entrypoint. Each layer has its own test file to make failures instantly locatable.
 - Rules are tested as pure functions against constructed `NormalizedTrace` fixtures — no file I/O.
 - The `diagnoseTrace` function is tested as a pure function against constructed `AnalysisResult` fixtures — no file I/O, no rule execution.
 - Both reporters use the injected `write` function to capture output into an array — no stdout mocking.
@@ -871,9 +1010,9 @@ The architecture is specifically designed to make these integrations straightfor
 
 ### VS Code Extension
 
-- Import `@rag-doctor/core`, `@rag-doctor/parser`, and `@rag-doctor/diagnostics` directly — all three are browser-safe (no Node.js built-ins).
-- Call `analyzeTrace()` when the user saves a `.json` trace file.
-- Call `diagnoseTrace()` on the result to surface root cause hints in the editor sidebar.
+- Import `@rag-doctor/ingestion`, `@rag-doctor/core`, and `@rag-doctor/diagnostics` directly — all three are pure and have no Node.js built-ins.
+- Call `ingestTrace()` when the user saves a `.json` trace file; catch `TraceValidationError` and surface field-level issues as VS Code `Diagnostic` objects.
+- Call `analyzeTrace()` on the normalized trace, then `diagnoseTrace()` on the result to surface root cause hints in the editor sidebar.
 - Map `DiagnosticFinding.severity` to VS Code `DiagnosticSeverity`.
 - Use `finding.details` for hover tooltips.
 
@@ -920,32 +1059,36 @@ Both reporters receive plain value objects — they have no knowledge of how the
 
 ### 1. Parse at the boundary, trust internally
 
-`normalizeTrace()` in `@rag-doctor/parser` is the only place that touches `unknown` typed data. Once a `NormalizedTrace` is returned, all downstream code operates on fully typed values.
+`ingestTrace()` in `@rag-doctor/ingestion` is the single authoritative boundary where `unknown`-typed data is validated and typed. Once a `NormalizedTrace` is returned, all downstream code — rules, engine, diagnosis, reporters — operates on fully typed values and never needs to re-validate.
 
-### 2. Rules are data, not classes
+### 2. Collect all validation errors before reporting
+
+`validateTrace()` collects every schema violation in a single pass before throwing. This means users see the complete picture in one error — all bad fields at once — rather than fixing one issue at a time. The structured `issues[]` array enables both human-readable terminal output and machine-readable `--json` error payloads from the same data.
+
+### 3. Rules are data, not classes
 
 Rules are plain object literals implementing a two-field interface. No abstract base classes, no inheritance, no decorators. This keeps rules trivially portable — a rule can live in a separate npm package, a private repository, or a local file.
 
-### 3. The engine is a pure function
+### 4. The engine is a pure function
 
 `analyzeTrace()` takes a trace and options and returns a result. It has no global state, no module-level side effects, and no I/O. Calling it twice with the same input will always produce the same output.
 
-### 4. Diagnosis is a pure function
+### 5. Diagnosis is a pure function
 
 `diagnoseTrace()` takes an `AnalysisResult` and returns a `DiagnosisResult`. It has no global state, no I/O, and no external dependencies beyond `@rag-doctor/types`. Like `analyzeTrace`, it is safe to call from any host environment.
 
-### 5. Reporters are injectable
+### 6. Reporters are injectable
 
 All reporters accept a `write` function parameter. This decouples the formatting logic from process I/O, making reporters fully testable and reusable in non-terminal environments.
 
-### 6. Findings carry structured data
+### 7. Findings carry structured data
 
 Every `DiagnosticFinding` includes an optional `details` field for machine-readable context (e.g. which chunk IDs were duplicates, what the average score was). This allows programmatic consumers to act on findings without parsing human-readable messages.
 
-### 7. The CLI is an injectable seam
+### 8. The CLI is an injectable seam
 
 `CliIO` decouples process-level I/O from command logic. The production `processIO` object is swapped out in tests for a captured-output implementation, enabling fast in-process unit tests alongside the subprocess-based integration suite.
 
-### 8. Shared logic is extracted, not duplicated
+### 9. Shared logic is extracted, not duplicated
 
-The `loadAndAnalyze` helper in the CLI encapsulates the file-load → parse → normalize → analyze pipeline once. Both the `analyze` and `diagnose` commands call it, ensuring error messages, exit codes, and validation behavior remain identical across commands without copy-paste.
+The `loadAndAnalyze` helper in the CLI encapsulates the file-load → parse → ingest → analyze pipeline once. Both the `analyze` and `diagnose` commands call it, ensuring error messages, exit codes, and validation behavior remain identical across commands without copy-paste. The ingestion pipeline (`@rag-doctor/ingestion`) similarly centralizes validate + normalize in one place that CLI, SDK, and CI consumers all share.
