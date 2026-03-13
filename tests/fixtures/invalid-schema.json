@@ -1,0 +1,6 @@
+{
+  "notAQuery": "this has wrong field names",
+  "chunks": [
+    { "content": "some content" }
+  ]
+}

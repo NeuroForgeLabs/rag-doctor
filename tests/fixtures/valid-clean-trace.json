@@ -1,0 +1,18 @@
+{
+  "query": "What is the capital of France?",
+  "retrievedChunks": [
+    {
+      "id": "c1",
+      "text": "Paris is the capital and most populous city of France.",
+      "score": 0.97,
+      "source": "geography.md"
+    },
+    {
+      "id": "c2",
+      "text": "France is a country in Western Europe with Paris as its capital.",
+      "score": 0.93,
+      "source": "europe.md"
+    }
+  ],
+  "finalAnswer": "The capital of France is Paris."
+}

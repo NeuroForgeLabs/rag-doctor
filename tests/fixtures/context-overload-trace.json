@@ -1,0 +1,18 @@
+{
+  "query": "How does photosynthesis work?",
+  "retrievedChunks": [
+    { "id": "p1",  "text": "Photosynthesis converts sunlight into food using chlorophyll.", "score": 0.92 },
+    { "id": "p2",  "text": "Plants absorb CO2 and water to produce glucose and oxygen.", "score": 0.90 },
+    { "id": "p3",  "text": "The light-dependent reactions occur in the thylakoid membranes.", "score": 0.88 },
+    { "id": "p4",  "text": "The Calvin cycle fixes carbon using ATP and NADPH.", "score": 0.85 },
+    { "id": "p5",  "text": "Chloroplasts are the organelles where photosynthesis occurs.", "score": 0.84 },
+    { "id": "p6",  "text": "Oxygen is released as a byproduct of light-dependent reactions.", "score": 0.83 },
+    { "id": "p7",  "text": "Light intensity affects the rate of photosynthesis significantly.", "score": 0.81 },
+    { "id": "p8",  "text": "C4 plants have a specialized photosynthesis pathway for hot climates.", "score": 0.79 },
+    { "id": "p9",  "text": "CAM plants open stomata at night to conserve water during photosynthesis.", "score": 0.77 },
+    { "id": "p10", "text": "The Z-scheme describes electron transport in the light reactions.", "score": 0.76 },
+    { "id": "p11", "text": "Rubisco is the key enzyme responsible for carbon fixation.", "score": 0.74 },
+    { "id": "p12", "text": "Photosystem I and II collaborate in the light-dependent reactions.", "score": 0.73 }
+  ],
+  "finalAnswer": "Photosynthesis converts sunlight, CO2 and water into glucose and oxygen using chlorophyll."
+}

@@ -1,0 +1,29 @@
+{
+  "query": "How do I reset my password?",
+  "retrievedChunks": [
+    {
+      "id": "1",
+      "text": "To reset your password, navigate to the account settings page and click the 'Reset Password' button. An email will be sent to your registered address.",
+      "score": 0.82,
+      "source": "help-center.md"
+    },
+    {
+      "id": "2",
+      "text": "Password reset instructions are located in the account settings section. Click reset password to receive an email.",
+      "score": 0.81,
+      "source": "faq.md"
+    },
+    {
+      "id": "3",
+      "text": "You can change your password from the profile menu. Go to Settings > Security > Change Password.",
+      "score": 0.74,
+      "source": "user-guide.md"
+    }
+  ],
+  "finalAnswer": "Go to account settings and click 'Reset Password'. You will receive a reset link via email.",
+  "metadata": {
+    "model": "gpt-4o",
+    "embeddingModel": "text-embedding-3-small",
+    "timestamp": "2024-01-15T10:23:00Z"
+  }
+}

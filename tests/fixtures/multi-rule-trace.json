@@ -1,0 +1,18 @@
+{
+  "query": "What are the benefits of drinking water?",
+  "retrievedChunks": [
+    { "id": "m1",  "text": "Drinking water helps maintain the balance of body fluids.", "score": 0.21 },
+    { "id": "m2",  "text": "Drinking water helps maintain the balance of body fluids.", "score": 0.20 },
+    { "id": "m3",  "text": "Drinking water helps maintain the balance of body fluids.", "score": 0.19 },
+    { "id": "m4",  "text": "Water keeps you hydrated and supports kidney function.", "score": 0.18 },
+    { "id": "m5",  "text": "Water keeps you hydrated and supports kidney function.", "score": 0.22 },
+    { "id": "m6",  "text": "Staying hydrated can improve energy levels and brain function.", "score": 0.25 },
+    { "id": "m7",  "text": "Drinking enough water can prevent dehydration headaches.", "score": 0.17 },
+    { "id": "m8",  "text": "Water supports digestion and nutrient absorption in the gut.", "score": 0.24 },
+    { "id": "m9",  "text": "Proper hydration is essential for healthy skin and joints.", "score": 0.16 },
+    { "id": "m10", "text": "Athletes need more water to replace fluids lost through sweat.", "score": 0.23 },
+    { "id": "m11", "text": "Drinking cold water can slightly boost your metabolism.", "score": 0.15 },
+    { "id": "m12", "text": "Replacing sugary drinks with water reduces calorie intake.", "score": 0.14 }
+  ],
+  "finalAnswer": "Water helps with hydration, digestion, and brain function."
+}

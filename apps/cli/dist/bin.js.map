@@ -1,0 +1,1 @@
+{"version":3,"sources":["../src/bin.ts"],"sourcesContent":["import { run } from \"./cli.js\";\n\nrun();\n"],"mappings":";;;;;;AAEA,IAAI;","names":[]}

@@ -1,0 +1,53 @@
+{
+  "name": "rag-doctor",
+  "version": "0.1.0",
+  "description": "CLI tool to debug and diagnose RAG pipelines",
+  "type": "module",
+  "bin": {
+    "rag-doctor": "./dist/bin.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "clean": "rm -rf dist",
+    "start": "node dist/bin.js"
+  },
+  "dependencies": {
+    "@rag-doctor/core": "workspace:*",
+    "@rag-doctor/diagnostics": "workspace:*",
+    "@rag-doctor/parser": "workspace:*",
+    "@rag-doctor/reporters": "workspace:*",
+    "@rag-doctor/types": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  },
+  "keywords": [
+    "rag",
+    "llm",
+    "retrieval-augmented-generation",
+    "debugging",
+    "diagnostics",
+    "cli"
+  ],
+  "license": "MIT",
+  "files": [
+    "dist",
+    "README.md"
+  ]
+}

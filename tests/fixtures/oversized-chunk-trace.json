@@ -1,0 +1,17 @@
+{
+  "query": "Explain the entire history of computing from 1940 to present",
+  "retrievedChunks": [
+    {
+      "id": "big1",
+      "text": "The history of computing begins with mechanical devices in the early 19th century, though the modern electronic computer era started around 1940. Charles Babbage conceived of the Analytical Engine, a mechanical general-purpose computer, though it was never fully built. Ada Lovelace wrote what is considered the first algorithm intended to be processed by a machine. In the 1930s and 40s, Alan Turing formalized the concept of computation with his theoretical Turing Machine, laying the mathematical groundwork for all modern computing. The first electronic computers like ENIAC (1945) and EDVAC were enormous machines filling entire rooms, consuming vast amounts of electricity and requiring teams of operators. They used vacuum tubes which were unreliable and generated significant heat. The invention of the transistor in 1947 at Bell Labs by Shockley, Bardeen, and Brattain revolutionized electronics and eventually led to much smaller and more reliable computers. The 1950s saw the development of the first commercial computers like UNIVAC and IBM mainframes that businesses began using for data processing. Programming in this era was done in machine code or assembly language, which was tedious and error-prone. The development of FORTRAN in 1957 by IBM was a major breakthrough, introducing the concept of high-level programming languages that could be compiled to machine code automatically.",
+      "score": 0.71,
+      "source": "computing-history.md"
+    },
+    {
+      "id": "big2",
+      "text": "Short answer chunk.",
+      "score": 0.68
+    }
+  ],
+  "finalAnswer": "Computing history spans from vacuum tubes to modern AI chips."
+}

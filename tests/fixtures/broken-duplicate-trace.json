@@ -1,0 +1,23 @@
+{
+  "query": "How do I reset my password?",
+  "retrievedChunks": [
+    {
+      "id": "d1",
+      "text": "To reset your password go to account settings and click the reset button.",
+      "score": 0.85,
+      "source": "help.md"
+    },
+    {
+      "id": "d2",
+      "text": "To reset your password go to account settings and click the reset button.",
+      "score": 0.84,
+      "source": "faq.md"
+    },
+    {
+      "id": "d3",
+      "text": "To reset your password go to account settings and click the reset button.",
+      "score": 0.83
+    }
+  ],
+  "finalAnswer": "Go to account settings and click reset password."
+}

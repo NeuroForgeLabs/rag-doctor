@@ -1,0 +1,29 @@
+{
+  "query": "How do I reset my password?",
+  "retrievedChunks": [
+    {
+      "id": "chunk-1",
+      "text": "To reset your password navigate to account settings and click the reset password button.",
+      "score": 0.88,
+      "source": "help-center.md"
+    },
+    {
+      "id": "chunk-2",
+      "text": "You will receive a password reset email at your registered address within a few minutes.",
+      "score": 0.82,
+      "source": "help-center.md"
+    },
+    {
+      "id": "chunk-3",
+      "text": "For security reasons the reset link expires after 24 hours.",
+      "score": 0.75,
+      "source": "security.md"
+    }
+  ],
+  "finalAnswer": "Go to account settings, click Reset Password, and follow the link in your email.",
+  "metadata": {
+    "model": "gpt-4o",
+    "embeddingModel": "text-embedding-3-small",
+    "timestamp": "2024-01-15T10:23:00Z"
+  }
+}

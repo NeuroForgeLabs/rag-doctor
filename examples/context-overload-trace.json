@@ -1,0 +1,18 @@
+{
+  "query": "How does photosynthesis work?",
+  "retrievedChunks": [
+    { "id": "1",  "text": "Photosynthesis is the process by which green plants convert sunlight into food.", "score": 0.92 },
+    { "id": "2",  "text": "Plants use chlorophyll to absorb sunlight and convert CO2 and water to glucose.", "score": 0.89 },
+    { "id": "3",  "text": "The light-dependent reactions of photosynthesis occur in the thylakoid membranes.", "score": 0.88 },
+    { "id": "4",  "text": "The Calvin cycle uses ATP and NADPH produced in light reactions to fix carbon.", "score": 0.85 },
+    { "id": "5",  "text": "Chloroplasts are the organelles where photosynthesis takes place in plant cells.", "score": 0.84 },
+    { "id": "6",  "text": "Oxygen is released as a byproduct of the light-dependent reactions.", "score": 0.83 },
+    { "id": "7",  "text": "The rate of photosynthesis is affected by light intensity, CO2 concentration.", "score": 0.81 },
+    { "id": "8",  "text": "C4 plants have evolved a specialized form of photosynthesis to reduce photorespiration.", "score": 0.79 },
+    { "id": "9",  "text": "CAM plants open their stomata at night to minimize water loss during photosynthesis.", "score": 0.77 },
+    { "id": "10", "text": "The Z-scheme describes the electron transport chain in photosynthesis.", "score": 0.76 },
+    { "id": "11", "text": "Rubisco is the enzyme responsible for carbon fixation in the Calvin cycle.", "score": 0.74 },
+    { "id": "12", "text": "Photosystem I and Photosystem II work together in the light-dependent reactions.", "score": 0.73 }
+  ],
+  "finalAnswer": "Photosynthesis converts sunlight, CO2 and water into glucose and oxygen using chlorophyll."
+}

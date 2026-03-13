@@ -1,0 +1,11 @@
+{
+  "query": "What are the side effects of ibuprofen?",
+  "retrievedChunks": [
+    { "id": "1", "text": "Common side effects of ibuprofen include stomach pain, heartburn, and nausea.", "score": 0.22, "source": "med-db.md" },
+    { "id": "2", "text": "Ibuprofen may cause dizziness and headache in some patients.", "score": 0.18, "source": "patient-guide.md" },
+    { "id": "3", "text": "Consult your doctor before taking ibuprofen if you have kidney problems.", "score": 0.29, "source": "warnings.md" },
+    { "id": "4", "text": "Aspirin is a different NSAID with its own side effect profile.", "score": 0.11 },
+    { "id": "5", "text": "Do not exceed 1200mg of ibuprofen daily without medical supervision.", "score": 0.32, "source": "dosage.md" }
+  ],
+  "finalAnswer": "Ibuprofen can cause stomach pain, heartburn, and nausea."
+}
