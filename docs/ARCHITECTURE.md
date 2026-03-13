@@ -11,6 +11,7 @@ This document describes the design decisions, package responsibilities, data flo
 3. [Package Dependency Graph](#package-dependency-graph)
 4. [Package Reference](#package-reference)
    - [@rag-doctor/types](#rag-doctortypes)
+   - [@rag-doctor/adapters](#rag-doctoradapters)
    - [@rag-doctor/ingestion](#rag-doctoringestion)
    - [@rag-doctor/parser](#rag-doctorparser)
    - [@rag-doctor/rules](#rag-doctorrules)
@@ -52,6 +53,8 @@ rag-doctor/
 │       │   ├── index.ts         # Programmatic re-export of run() and helpers
 │       │   └── __tests__/
 │       │       ├── cli.test.ts              # In-process unit tests (CliIO injection)
+│       │       ├── cli-phase3.test.ts       # --config flag and pack tests
+│       │       ├── cli-phase4.test.ts       # --format flag and adapter tests
 │       │       └── cli.integration.test.ts  # Subprocess tests via spawnSync
 │       ├── package.json
 │       ├── tsconfig.json
@@ -77,6 +80,24 @@ rag-doctor/
 │   │           ├── normalize-trace.test.ts
 │   │           └── ingest-trace.test.ts
 │   │
+│   ├── adapters/                # @rag-doctor/adapters   — external trace format adapters (Phase 4)
+│   │   └── src/
+│   │       ├── adapter-types.ts                    # TraceFormat, AdaptedTraceResult, AdaptOptions, TraceAdapter
+│   │       ├── errors.ts                           # UnsupportedTraceFormatError, AdapterInputError
+│   │       ├── detect-format.ts                    # detectTraceFormat() heuristic detection
+│   │       ├── adapt-trace.ts                      # adaptTrace() main entry point
+│   │       ├── adapters/
+│   │       │   ├── canonical.adapter.ts            # Pass-through adapter for canonical format
+│   │       │   ├── event-trace.adapter.ts          # Generic event-based trace adapter
+│   │       │   ├── langchain.adapter.ts            # LangChain trace adapter
+│   │       │   └── langsmith.adapter.ts            # LangSmith trace adapter
+│   │       ├── index.ts
+│   │       └── __tests__/
+│   │           ├── detect-format.test.ts
+│   │           ├── adapters.test.ts
+│   │           ├── adapt-trace.test.ts
+│   │           └── integration.test.ts
+│   │
 │   ├── parser/                  # @rag-doctor/parser     — legacy input normalization
 │   │   └── src/
 │   │       ├── errors.ts
@@ -86,18 +107,24 @@ rag-doctor/
 │   │
 │   ├── rules/                   # @rag-doctor/rules      — diagnostic rule implementations
 │   │   └── src/
-│   │       ├── duplicate-chunks.rule.ts
-│   │       ├── low-retrieval-score.rule.ts
-│   │       ├── oversized-chunk.rule.ts
-│   │       ├── context-overload.rule.ts
+│   │       ├── errors.ts                        # RuleConfigurationError (Phase 3)
+│   │       ├── packs.ts                         # recommendedPack, strictPack, BUILT_IN_PACKS (Phase 3)
+│   │       ├── duplicate-chunks.rule.ts         # createDuplicateChunksRule factory + DuplicateChunksRule
+│   │       ├── low-retrieval-score.rule.ts      # createLowRetrievalScoreRule factory + LowRetrievalScoreRule
+│   │       ├── oversized-chunk.rule.ts          # createOversizedChunkRule factory + OversizedChunkRule
+│   │       ├── context-overload.rule.ts         # createContextOverloadRule factory + ContextOverloadRule
 │   │       ├── index.ts
-│   │       └── __tests__/rules.test.ts
+│   │       └── __tests__/
+│   │           ├── rules.test.ts                # Legacy rule object tests (Phase 1)
+│   │           └── factories-and-packs.test.ts  # Rule factory + pack tests (Phase 3)
 │   │
 │   ├── core/                    # @rag-doctor/core       — analysis engine
 │   │   └── src/
-│   │       ├── engine.ts
+│   │       ├── engine.ts                        # analyzeTrace, resolveRules, UnknownPackError (Phase 3)
 │   │       ├── index.ts
-│   │       └── __tests__/engine.test.ts
+│   │       └── __tests__/
+│   │           ├── engine.test.ts               # Phase 1/2 engine tests
+│   │           └── engine-phase3.test.ts        # Pack resolution, ruleOptions, error tests (Phase 3)
 │   │
 │   ├── diagnostics/             # @rag-doctor/diagnostics — root cause analyzer (Phase 2A)
 │   │   └── src/
@@ -123,6 +150,7 @@ rag-doctor/
 │       ├── valid-clean-trace.json
 │       ├── valid-minimal-trace.json
 │       ├── valid-low-score-trace.json
+│       ├── valid-medium-score-trace.json        # Avg score ~0.64 (Phase 3 config tests)
 │       ├── broken-low-score-trace.json
 │       ├── broken-duplicate-trace.json
 │       ├── context-overload-trace.json
@@ -132,7 +160,21 @@ rag-doctor/
 │       ├── invalid-schema.json
 │       ├── invalid-missing-fields.json
 │       ├── invalid-bad-score-type.json
-│       └── invalid-malformed-chunks.json
+│       ├── invalid-malformed-chunks.json
+│       ├── config-recommended.json              # Phase 3 config fixtures
+│       ├── config-strict.json
+│       ├── config-tight-thresholds.json
+│       ├── config-unknown-pack.json
+│       ├── config-invalid-option.json
+│       ├── config-invalid-json.json
+│       ├── config-not-object.json
+│       ├── config-packs-not-array.json
+│       ├── event-trace-valid.json                   # Phase 4 adapter fixtures
+│       ├── langchain-valid.json
+│       ├── langsmith-valid.json
+│       ├── unknown-format.json
+│       ├── malformed-langchain.json
+│       └── malformed-event-trace.json
 │
 ├── examples/
 │   ├── basic-trace.json
@@ -159,6 +201,10 @@ Arrows represent `import` dependencies (pointing from consumer to dependency).
 
 ```
 rag-doctor (CLI)
+    │
+    ├──▶ @rag-doctor/adapters           ← Phase 4: external trace format adapters
+    │         │
+    │         └──▶ @rag-doctor/types
     │
     ├──▶ @rag-doctor/ingestion          ← Phase 2B: shared ingestion pipeline
     │         │
@@ -189,8 +235,9 @@ rag-doctor (CLI)
 
 **Key rules:**
 
-- `@rag-doctor/ingestion` depends **only on `@rag-doctor/types`**. It has no dependency on `parser`, `core`, `diagnostics`, `reporters`, or the CLI. It is pure, deterministic, and safe to embed in any host environment — browser, VS Code extension, serverless function, or CLI.
-- `@rag-doctor/core` has **no dependency on the CLI, ingestion, parser, diagnostics, or reporters**. It only depends on `rules` and `types`.
+- `@rag-doctor/adapters` depends **only on `@rag-doctor/types`**. It transforms external trace shapes into canonical raw trace objects. It has no dependency on `ingestion`, `core`, or the CLI. Adapters are pure, deterministic, and embeddable.
+- `@rag-doctor/ingestion` depends **only on `@rag-doctor/types`**. It has no dependency on `adapters`, `parser`, `core`, `diagnostics`, `reporters`, or the CLI. It is pure, deterministic, and safe to embed in any host environment.
+- `@rag-doctor/core` has **no dependency on the CLI, adapters, ingestion, parser, diagnostics, or reporters**. It only depends on `rules` and `types`.
 - `@rag-doctor/diagnostics` depends only on `@rag-doctor/types`. It accepts a plain `AnalysisResult` object and is therefore embeddable anywhere.
 - `@rag-doctor/reporters` depends on `@rag-doctor/diagnostics` so it can type-check the `DiagnosisResult` parameter of `printDiagnosisReport`. This is a one-way type dependency only.
 
@@ -213,8 +260,56 @@ rag-doctor (CLI)
 | `DiagnosticRule` | interface | Contract that every rule must implement |
 | `SeveritySummary` | interface | Counts of findings per severity |
 | `AnalysisResult` | interface | The return type of the core engine |
+| `RuleFactory<O>` | type | Function type `(options?: Partial<O>) => DiagnosticRule` (Phase 3) |
+| `RuleOptions` | type | `Record<ruleId, Record<optionKey, unknown>>` — per-rule overrides (Phase 3) |
+| `RulePack` | interface | Named, resolvable collection of rules with `.resolve(ruleOptions?)` (Phase 3) |
+| `ResolvedAnalysisConfig` | interface | `{ rules: DiagnosticRule[] }` — result of resolution (Phase 3) |
 
 **Has no runtime code.** All exports are TypeScript type/interface declarations. The compiled `dist/index.js` is a single empty re-export file.
+
+---
+
+### @rag-doctor/adapters
+
+**Role:** Transforms external trace formats into RAG Doctor's canonical raw trace shape. This is a pure shape-transformation layer — it does NOT validate or normalize the trace (that is `@rag-doctor/ingestion`'s responsibility).
+
+**Exports:**
+
+| Symbol | Kind | Description |
+|---|---|---|
+| `adaptTrace(input, options?)` | function | Auto-detect and adapt external trace format to canonical form |
+| `detectTraceFormat(input)` | function | Heuristic format detection; returns `TraceFormat` |
+| `UnsupportedTraceFormatError` | class | Thrown when format cannot be detected or is "unknown" |
+| `AdapterInputError` | class | Thrown when input shape doesn't match the expected adapter format |
+| `canonicalAdapter` | `TraceAdapter` | Pass-through adapter for canonical format |
+| `eventTraceAdapter` | `TraceAdapter` | Adapter for generic event-based traces |
+| `langchainAdapter` | `TraceAdapter` | Adapter for simplified LangChain traces |
+| `langsmithAdapter` | `TraceAdapter` | Adapter for simplified LangSmith traces |
+| `TraceFormat` | type | `"canonical" \| "event-trace" \| "langchain" \| "langsmith" \| "unknown"` |
+| `AdaptedTraceResult` | interface | `{ format, adapter, trace, warnings }` |
+| `AdaptOptions` | interface | `{ format?: TraceFormat }` |
+| `TraceAdapter` | interface | Contract for individual adapters |
+
+**Detection rules (first match wins):**
+
+1. `query` + `retrievedChunks` → `"canonical"`
+2. `events` (array) → `"event-trace"`
+3. `input` + `retrieverOutput` → `"langchain"`
+4. `run_type` + `inputs` + `outputs` → `"langsmith"`
+5. otherwise → `"unknown"`
+
+**Pipeline boundary:**
+
+```
+raw parsed JSON
+  → @rag-doctor/adapters: detectTraceFormat() + adaptTrace()  ← shape transformation
+  → canonical raw trace object
+  → @rag-doctor/ingestion: ingestTrace()                      ← schema validation + normalization
+  → NormalizedTrace
+  → @rag-doctor/core: analyzeTrace()
+```
+
+Adapters produce a `Record<string, unknown>` that conforms to the canonical shape but has NOT been schema-validated. This preserves the responsibility boundary: adapters transform shapes, ingestion validates schemas.
 
 ---
 
@@ -324,72 +419,132 @@ rag-doctor (CLI)
 
 ### @rag-doctor/rules
 
-**Role:** Implements all built-in diagnostic rules. Each rule is an object literal conforming to `DiagnosticRule`.
+**Role:** Implements all built-in diagnostic rules. Rules are created by factory functions with typed, validated options. Each factory returns a `DiagnosticRule` object. Named rule packs bundle factories together with preset thresholds.
 
 **Exports:**
 
-| Symbol | Description |
-|---|---|
-| `DuplicateChunksRule` | Detects near-duplicate chunks via Jaccard token similarity |
-| `LowRetrievalScoreRule` | Flags traces where average chunk score < 0.5 |
-| `OversizedChunkRule` | Flags chunks longer than 1200 characters |
-| `ContextOverloadRule` | Flags traces with more than 10 retrieved chunks |
-| `defaultRules` | Array of all four rules above |
+| Symbol | Kind | Description |
+|---|---|---|
+| `createDuplicateChunksRule(options?)` | factory | Creates rule with configurable `similarityThreshold` (default: 0.8) |
+| `createLowRetrievalScoreRule(options?)` | factory | Creates rule with configurable `averageScoreThreshold` (default: 0.5) |
+| `createOversizedChunkRule(options?)` | factory | Creates rule with configurable `maxChunkLength` (default: 1200) |
+| `createContextOverloadRule(options?)` | factory | Creates rule with configurable `maxChunkCount` (default: 10) |
+| `DuplicateChunksRule` | object | Default-threshold instance; backward-compatible export |
+| `LowRetrievalScoreRule` | object | Default-threshold instance; backward-compatible export |
+| `OversizedChunkRule` | object | Default-threshold instance; backward-compatible export |
+| `ContextOverloadRule` | object | Default-threshold instance; backward-compatible export |
+| `defaultRules` | `DiagnosticRule[]` | Array of all four rules with defaults |
+| `recommendedPack` | `RulePack` | Pack: all rules, default thresholds |
+| `strictPack` | `RulePack` | Pack: all rules, tighter thresholds |
+| `BUILT_IN_PACKS` | `Record<string, RulePack>` | Registry of all named packs |
+| `RuleConfigurationError` | class | Thrown by factories for invalid option values |
+| `DuplicateChunksOptions` | type | `{ similarityThreshold: number }` |
+| `LowRetrievalScoreOptions` | type | `{ averageScoreThreshold: number }` |
+| `OversizedChunkOptions` | type | `{ maxChunkLength: number }` |
+| `ContextOverloadOptions` | type | `{ maxChunkCount: number }` |
 
 **Built-in rule details:**
 
 #### `duplicate-chunks` (medium)
 
-Uses Jaccard similarity on whitespace-tokenized, lowercased text. Two chunks are considered near-duplicates when their token-set overlap is ≥ 0.8. The finding includes the IDs of all duplicate pairs and their similarity scores.
+Uses Jaccard similarity on whitespace-tokenized, lowercased text. Two chunks are considered near-duplicates when their token-set overlap is ≥ `similarityThreshold`. The finding includes the IDs of all duplicate pairs, their similarity scores, and the active `threshold`.
 
-> **Why Jaccard?** It is O(n) in set operations, requires no external dependencies, and works well on short text spans. Future versions may offer cosine similarity on embeddings as an optional enhancement.
+> **Why Jaccard?** It is O(n) in set operations, requires no external dependencies, and works well on short text spans.
 
 #### `low-retrieval-score` (high)
 
-Computes the arithmetic mean of all chunks that have a `score` field. Chunks without scores are excluded from the calculation. If no chunks have a score, the rule is skipped entirely (no false positives on unscored traces).
-
-Threshold: `0.5` (fires when average < 0.5). Returns the three lowest-scoring chunks in `details` for quick diagnosis. The `details` object also includes `averageScore`, `threshold`, and `chunksEvaluated`.
+Computes the arithmetic mean of all chunks that have a `score` field. Chunks without scores are excluded. If no chunks have a score, the rule is skipped entirely. Fires when average < `averageScoreThreshold`. Returns the three lowest-scoring chunks and the active `threshold` in `details`.
 
 #### `oversized-chunk` (low)
 
-Compares `chunk.text.length` against 1200 characters. This is a character count (not token count) so it is model-agnostic. The finding includes the chunk IDs, lengths, and source references. All oversized chunks are reported in a single finding.
+Compares `chunk.text.length` against `maxChunkLength` (character count, model-agnostic). All oversized chunks are reported in a single finding with their IDs, lengths, and source references.
 
 #### `context-overload` (medium)
 
-Counts the total number of retrieved chunks. Fires when count > 10. Motivated by research on the "lost in the middle" phenomenon in LLM context handling. The `details` object includes `chunkCount` and `threshold`.
+Fires when `retrievedChunks.length > maxChunkCount`. Motivated by research on the "lost in the middle" phenomenon. The `details` object includes `chunkCount` and `threshold`.
 
-**Rule contract (`DiagnosticRule`):**
+**Rule factory pattern:**
 
 ```typescript
+// Same interface, whether created with factory or imported as default
 interface DiagnosticRule {
-  id: string;                                     // unique kebab-case identifier
-  name: string;                                   // human-readable label
-  run(trace: NormalizedTrace): DiagnosticFinding[];  // pure function, no side effects
+  id: string;
+  name: string;
+  run(trace: NormalizedTrace): DiagnosticFinding[];  // pure, no side effects
+}
+
+// Factory creates a closure over the validated options
+export function createContextOverloadRule(options?: Partial<ContextOverloadOptions>): DiagnosticRule {
+  const opts = { ...DEFAULTS, ...options };
+  validateOptions(opts);           // throws RuleConfigurationError if invalid
+  const maxCount = opts.maxChunkCount;
+  return { id: "context-overload", name: "Context Overload", run(trace) { ... } };
 }
 ```
 
-Rules are plain object literals — no classes, no inheritance. `run()` must be a pure function: given the same trace, it must return the same findings.
+**Rule packs:**
+
+A `RulePack` has a `.resolve(ruleOptions?)` method that creates all its rules (calling their factories) and applies any per-rule overrides:
+
+```typescript
+interface RulePack {
+  name: string;
+  description: string;
+  resolve(ruleOptions?: RuleOptions): DiagnosticRule[];
+}
+```
+
+The strict pack presets its own defaults and then layers the caller's `ruleOptions` on top:
+
+```
+strict defaults:  { similarityThreshold: 0.7, averageScoreThreshold: 0.6, ... }
+caller overrides: { "context-overload": { maxChunkCount: 6 } }
+                  ↓ merged
+result:           { similarityThreshold: 0.7, averageScoreThreshold: 0.6, ..., maxChunkCount: 6 }
+```
 
 ---
 
 ### @rag-doctor/core
 
-**Role:** Orchestrates rule execution and aggregates findings into an `AnalysisResult`. This is the library API that all integrations should depend on.
+**Role:** Orchestrates rule execution and aggregates findings into an `AnalysisResult`. Supports pack resolution and per-rule option overrides. This is the library API that all integrations should depend on.
 
 **Exports:**
 
 | Symbol | Description |
 |---|---|
-| `analyzeTrace(trace, options?)` | Runs all rules, returns `AnalysisResult` |
-| `AnalyzeOptions` | `{ rules?: DiagnosticRule[]; silent?: boolean }` |
+| `analyzeTrace(trace, options?)` | Resolves rules from options, runs them, returns `AnalysisResult` |
+| `resolveRules(options)` | Extracts the concrete rule list from `AnalyzeOptions` |
+| `UnknownPackError` | Thrown when `packs` contains an unrecognized name |
+| `RuleConfigurationError` | Re-exported from `@rag-doctor/rules` for consumer convenience |
+| `AnalyzeOptions` | Full options type (see below) |
 
 Re-exports all types from `@rag-doctor/types` for consumer convenience.
+
+**`AnalyzeOptions`:**
+
+```typescript
+interface AnalyzeOptions {
+  rules?: DiagnosticRule[];    // explicit rules — when provided, packs/ruleOptions are ignored
+  packs?: string[];            // named packs to resolve (e.g. "recommended", "strict")
+  ruleOptions?: RuleOptions;   // per-rule threshold overrides applied when resolving packs
+  silent?: boolean;
+}
+```
+
+**Resolution priority:**
+
+```
+1. options.rules    → use as-is (backward compatible)
+2. options.packs    → resolve each pack.resolve(ruleOptions); concatenate
+3. (neither)        → defaultRules
+```
 
 **Engine algorithm:**
 
 ```
 analyzeTrace(trace, options):
-  rules = options.rules ?? defaultRules
+  rules = resolveRules(options)      // resolution priority above
   findings = []
   for each rule in rules:
     findings.push(...rule.run(trace))
@@ -398,12 +553,6 @@ analyzeTrace(trace, options):
 ```
 
 Rules are executed sequentially. There is no parallelism — rules are expected to be fast synchronous operations.
-
-**`AnalyzeOptions.rules`** allows full replacement of the rule set. To extend the defaults:
-
-```typescript
-analyzeTrace(trace, { rules: [...defaultRules, myCustomRule] });
-```
 
 **Zero I/O guarantee:** `@rag-doctor/core` does not import `fs`, `path`, `process`, or any Node.js built-in. It is safe to bundle for browser environments.
 
@@ -559,8 +708,8 @@ Colors are implemented as inline ANSI escape sequences in `src/ansi.ts` — no e
 **Commands:**
 
 ```
-rag-doctor analyze  <traceFile> [--json]
-rag-doctor diagnose <traceFile> [--json]
+rag-doctor analyze  <traceFile> [--json] [--config <file>] [--format <name>]
+rag-doctor diagnose <traceFile> [--json] [--config <file>] [--format <name>]
 rag-doctor --help
 ```
 
@@ -576,12 +725,30 @@ interface CliIO {
 
 Production code uses `processIO` (backed by `process.stdout`, `process.stderr`, `process.exit`). Tests inject a custom `CliIO` that captures output and throws `CliExitError` instead of killing the process, enabling fast in-process testing without subprocess overhead.
 
+**`--config` flag (Phase 3):**
+
+When `--config <file>` is supplied, the CLI:
+1. Reads and parses the JSON config file
+2. Validates its schema (`packs`, `ruleOptions`)
+3. Builds an `AnalyzeOptions` object and passes it to `analyzeTrace`
+
+Config file schema:
+```json
+{
+  "packs": ["recommended"],
+  "ruleOptions": {
+    "low-retrieval-score": { "averageScoreThreshold": 0.6 },
+    "context-overload": { "maxChunkCount": 8 }
+  }
+}
+```
+
 **Shared file-loading helper (`loadAndAnalyze`):**
 
-Both `analyze` and `diagnose` commands share a single internal helper that encapsulates the complete file-load and ingestion pipeline. This eliminates duplication and ensures error handling is identical across both commands:
+Both `analyze` and `diagnose` commands share a single internal helper that encapsulates the complete file-load, ingestion, and analysis pipeline:
 
 ```
-loadAndAnalyze(filePath, flags, io):
+loadAndAnalyze(filePath, flags, io, analyzeOptions):
   1. resolve absolute path from cwd
   2. check file existence → exit 1 with "File not found" error if missing
   3. readFileSync → exit 1 if unreadable
@@ -590,7 +757,8 @@ loadAndAnalyze(filePath, flags, io):
   5. ingestTrace() [validate + normalize via @rag-doctor/ingestion]
      → exit 1 with field-level error list if validation fails
      (in --json mode: writes INVALID_TRACE_SCHEMA payload to stderr)
-  6. analyzeTrace()
+  6. analyzeTrace(trace, analyzeOptions)
+     → exit 1 on UnknownPackError or RuleConfigurationError
   7. return AnalysisResult
 ```
 
@@ -599,27 +767,36 @@ loadAndAnalyze(filePath, flags, io):
 | Error type | Terminal output | `--json` output (stderr) |
 |---|---|---|
 | File not found | `Error: File not found: <path>` | `{ "error": "File not found", "file": "<path>" }` |
-| Invalid JSON | `Error: <file> is not valid JSON.` | `{ "error": "TRACE_PARSE_ERROR", "message": "..." }` |
+| Invalid JSON trace | `Error: <file> is not valid JSON.` | `{ "error": "TRACE_PARSE_ERROR", "message": "..." }` |
 | Schema validation | `Error: Invalid trace format: ...\n  • field: expected X, got Y` | `{ "code": "INVALID_TRACE_SCHEMA", "issues": [...] }` |
+| Config not found | `Error: Config file not found: <path>` | `{ "error": "Config file not found", "file": "<path>" }` |
+| Invalid config JSON | `Error: <file> is not valid JSON.` | `{ "error": "CONFIG_PARSE_ERROR", "file": "<path>" }` |
+| Config schema error | `Error: Config schema error: <message>` | `{ "error": "CONFIG_SCHEMA_ERROR", "message": "..." }` |
+| Unknown pack | `Error: Unknown rule pack "x". Available: ...` | `{ "error": "UNKNOWN_PACK_ERROR", "message": "..." }` |
+| Invalid rule option | `Error: Rule "x": invalid option "y" — <constraint>` | `{ "error": "RULE_CONFIGURATION_ERROR", "ruleId": "x", "optionKey": "y", ... }` |
 
 **`analyze` command execution flow:**
 
 ```
-1. loadAndAnalyze(filePath, io) → AnalysisResult
-2. if --json: JSON.stringify(result) to stdout; return
+1. loadConfig(flags.config) → RagDoctorConfig | null
+2. build analyzeOptions from config (packs, ruleOptions)
+3. loadAndAnalyze(filePath, io, analyzeOptions) → AnalysisResult
+4. if --json: JSON.stringify(result) to stdout; return
    else: printTerminalReport(result)
-3. if result.summary.high > 0: exit 1  (CI gate)
+5. if result.summary.high > 0: exit 1  (CI gate)
    Note: --json does NOT trigger exit 1 on high severity
 ```
 
 **`diagnose` command execution flow:**
 
 ```
-1. loadAndAnalyze(filePath, io) → AnalysisResult
-2. diagnoseTrace(analysisResult) → DiagnosisResult
-3. if --json: JSON.stringify(diagnosis) to stdout; return
+1. loadConfig(flags.config) → RagDoctorConfig | null
+2. build analyzeOptions from config
+3. loadAndAnalyze(filePath, io, analyzeOptions) → AnalysisResult
+4. diagnoseTrace(analysisResult) → DiagnosisResult
+5. if --json: JSON.stringify(diagnosis) to stdout; return
    else: printDiagnosisReport(diagnosis)
-4. if analysisResult.summary.high > 0: exit 1  (CI gate)
+6. if analysisResult.summary.high > 0: exit 1  (CI gate)
    Note: --json does NOT trigger exit 1 on high severity
 ```
 
@@ -645,13 +822,19 @@ Exit codes are driven by the underlying `AnalysisResult` severity — the diagno
 ```
 User
   │
-  │  trace.json (raw JSON file)
+  │  trace.json (any supported format)
   ▼
 apps/cli  ──readFileSync──▶  raw string
                 │
                 │  JSON.parse
                 ▼
           raw unknown object
+                │
+                │  adaptTrace()           @rag-doctor/adapters (Phase 4)
+                │  (detectTraceFormat +   ↳ auto-detect or use --format flag
+                │   adapter.adapt())      ↳ throws UnsupportedTraceFormatError / AdapterInputError
+                ▼
+          canonical raw trace
                 │
                 │  ingestTrace()          @rag-doctor/ingestion
                 │  (validateTrace +       ↳ throws TraceValidationError
@@ -772,18 +955,32 @@ interface DiagnosticFinding {
 }
 ```
 
-The `details` field carries structured data (e.g. duplicate pair IDs, average scores, oversized chunk IDs) for programmatic consumers such as a VS Code extension or dashboard.
+The `details` field carries structured data (e.g. duplicate pair IDs, average scores, oversized chunk IDs, and the active **threshold**) for programmatic consumers such as a VS Code extension or dashboard.
 
-### Built-in Thresholds
+### Configurable Thresholds (Phase 3)
 
-| Rule | Threshold | Configurable |
-|---|---|---|
-| Jaccard duplicate similarity | ≥ 0.8 | Not yet — planned via rule options |
-| Low retrieval score | avg < 0.5 | Not yet |
-| Oversized chunk | > 1200 chars | Not yet |
-| Context overload | > 10 chunks | Not yet |
+All built-in thresholds are now configurable via rule factories or rule packs:
 
-Per-rule configuration is planned for a future release via an options parameter on `DiagnosticRule.run()`.
+| Rule | Default Threshold | Option Key | Constraint |
+|---|---|---|---|
+| Jaccard duplicate similarity | ≥ 0.8 | `similarityThreshold` | `> 0` and `<= 1` |
+| Low retrieval score | avg < 0.5 | `averageScoreThreshold` | `>= 0` and `<= 1` |
+| Oversized chunk | > 1200 chars | `maxChunkLength` | positive integer |
+| Context overload | > 10 chunks | `maxChunkCount` | positive integer |
+
+Invalid option values throw `RuleConfigurationError` immediately at factory call time, before any analysis runs. This ensures configuration errors surface early with a clear message rather than silently producing unexpected results.
+
+### Rule Factory Pattern
+
+```typescript
+// Factory closes over validated options
+const rule = createLowRetrievalScoreRule({ averageScoreThreshold: 0.7 });
+
+// Same interface as the default export
+rule.run(trace);  // → DiagnosticFinding[]
+```
+
+Rules are pure, stateless closures. Given the same trace and the same options, a rule always returns the same findings.
 
 ---
 
@@ -880,20 +1077,28 @@ export default defineConfig({
 
 ## Testing Strategy
 
-All tests use **Vitest**. The suite contains approximately 430 tests across eleven test files.
+All tests use **Vitest**. The suite contains approximately 525+ tests across eighteen test files.
 
 | Package | Test file | Tests | Coverage |
 |---|---|---|---|
+| `adapters` | `detect-format.test.ts` | ~17 | Canonical, event-trace, langchain, langsmith, unknown detection; priority ordering; non-object inputs |
+| `adapters` | `adapters.test.ts` | ~34 | Each adapter: valid input mapping, missing fields, generated IDs, warnings, `AdapterInputError` for malformed input |
+| `adapters` | `adapt-trace.test.ts` | ~13 | Auto-detection, explicit format, `UnsupportedTraceFormatError`, `AdapterInputError`, result structure |
+| `adapters` | `integration.test.ts` | ~5 | Adapted traces from all four formats flow through `ingestTrace()` successfully |
 | `ingestion` | `validate-trace.test.ts` | ~35 | Valid traces, missing fields, wrong primitive types, malformed arrays, nested chunk errors, collect-all behavior, error structure |
 | `ingestion` | `normalize-trace.test.ts` | ~22 | Query trimming, stable output, optional field preservation/omission, chunk field pass-through, no over-coercion, non-finite score drop |
 | `ingestion` | `ingest-trace.test.ts` | ~20 | Valid input → canonical trace, invalid input → `TraceValidationError`, malformed objects, `toPayload()` structure, determinism |
 | `parser` | `normalize.test.ts` | ~50 | Valid input, field trimming, missing fields, type errors, optional fields, score edge cases (Infinity, NaN, 0, 1), metadata passthrough, `ParseError` properties |
 | `rules` | `rules.test.ts` | ~56 | Each rule: fires / does not fire, correct severity, threshold boundaries, structured `details` fields, edge cases (empty list, single chunk, no scores) |
+| `rules` | `factories-and-packs.test.ts` | ~58 | Rule factories: default/custom thresholds, `RuleConfigurationError` for invalid options; packs: recommended/strict resolve correctly, ruleOptions overrides, determinism, backward compatibility |
 | `core` | `engine.test.ts` | ~23 | Default rules, custom rule injection, empty rule set, summary correctness, real rule scenarios against fixtures |
+| `core` | `engine-phase3.test.ts` | ~20 | `resolveRules` priority, pack resolution, ruleOptions overrides, `UnknownPackError`, `RuleConfigurationError` propagation, backward compatibility |
 | `diagnostics` | `root-cause-analyzer.test.ts` | ~29 | All four heuristic mappings, multi-finding with primary + contributing, no findings, unknown rule ID, determinism |
 | `reporters` | `terminal.reporter.test.ts` | ~29 | Output structure, zero-findings path, severity labels, sort order, recommendation rendering, injectable `write` |
 | `reporters` | `diagnosis.reporter.test.ts` | ~23 | Header, confidence labels, primary cause, contributing causes, evidence, recommendations, healthy path, injectable `write` |
 | `cli` (unit) | `cli.test.ts` | ~77 | `parseArgs`, `buildHelpText`, all `analyze` and `diagnose` command paths, all error paths, `--json` mode, exit codes, ingestion pipeline integration, field-level error details, structured JSON error output |
+| `cli` (unit) | `cli-phase3.test.ts` | ~33 | `--config` flag parsing, `loadConfig` validation, analyze/diagnose with packs, ruleOptions overrides, config error paths (not found, invalid JSON, schema errors), threshold-change regression |
+| `cli` (unit) | `cli-phase4.test.ts` | ~31 | `--format` flag parsing, auto-detection of all four formats, explicit `--format`, adapter errors, `--json` structured errors, diagnose with adapters, regression against existing behavior |
 | `cli` (integration) | `cli.integration.test.ts` | ~35 | End-to-end subprocess via `spawnSync`; skipped unless `dist/bin.js` exists (`describe.skipIf`) |
 
 **Test fixtures** (`tests/fixtures/`):
@@ -904,6 +1109,7 @@ All tests use **Vitest**. The suite contains approximately 430 tests across elev
 | `valid-clean-trace.json` | Valid | Nothing — minimal clean trace with 2 high-score chunks |
 | `valid-minimal-trace.json` | Valid | Nothing — one chunk, no optional fields |
 | `valid-low-score-trace.json` | Valid | `low-retrieval-score` (HIGH) — structurally valid with low scores |
+| `valid-medium-score-trace.json` | Valid | Nothing under defaults; `low-retrieval-score` (HIGH) under tight config (threshold 0.9) |
 | `broken-low-score-trace.json` | Valid | `low-retrieval-score` (HIGH) — avg score ≈ 0.22 |
 | `broken-duplicate-trace.json` | Valid | `duplicate-chunks` (MEDIUM) — 3 identical chunks |
 | `context-overload-trace.json` | Valid | `context-overload` (MEDIUM) — 12 chunks |
@@ -914,14 +1120,30 @@ All tests use **Vitest**. The suite contains approximately 430 tests across elev
 | `invalid-missing-fields.json` | Invalid | Schema error — missing `query` and `retrievedChunks` entirely |
 | `invalid-bad-score-type.json` | Invalid | Schema error — scores provided as strings instead of numbers |
 | `invalid-malformed-chunks.json` | Invalid | Schema error — chunks array contains primitives, nulls, and nested arrays |
+| `config-recommended.json` | Config | `{ "packs": ["recommended"] }` — Phase 3 config |
+| `config-strict.json` | Config | `{ "packs": ["strict"] }` |
+| `config-tight-thresholds.json` | Config | `recommended` pack + tight thresholds (`averageScoreThreshold: 0.9`, `maxChunkCount: 3`) |
+| `config-unknown-pack.json` | Config | Invalid — references nonexistent pack |
+| `config-invalid-option.json` | Config | Invalid — `maxChunkCount: 0` (must be positive) |
+| `config-invalid-json.json` | Config | Invalid — not valid JSON |
+| `config-not-object.json` | Config | Invalid — root is an array |
+| `config-packs-not-array.json` | Config | Invalid — `packs` is a string, not an array |
+| `event-trace-valid.json` | Adapter | Valid event-trace format with query, retrieval, answer events |
+| `langchain-valid.json` | Adapter | Valid LangChain format with input, retrieverOutput, output |
+| `langsmith-valid.json` | Adapter | Valid LangSmith format with run_type, inputs, outputs, retrieval |
+| `unknown-format.json` | Adapter | Unrecognized format — falls through to ingestion for validation |
+| `malformed-langchain.json` | Adapter | LangChain-shaped but with wrong field types |
+| `malformed-event-trace.json` | Adapter | Event-trace shaped but events is a string |
 
 **Testing philosophy:**
 
 - The ingestion package (`@rag-doctor/ingestion`) is tested as three independent layers: validator, normalizer, and the combined `ingestTrace` entrypoint. Each layer has its own test file to make failures instantly locatable.
 - Rules are tested as pure functions against constructed `NormalizedTrace` fixtures — no file I/O.
+- Rule factories are tested with default, custom, and invalid option values, verifying `RuleConfigurationError` messages and structured properties.
+- Rule packs are tested for correct threshold application, ruleOptions precedence, and determinism.
 - The `diagnoseTrace` function is tested as a pure function against constructed `AnalysisResult` fixtures — no file I/O, no rule execution.
 - Both reporters use the injected `write` function to capture output into an array — no stdout mocking.
-- The core engine is tested with both default and custom rule sets to verify the injection point works correctly.
+- The core engine is tested with both default and custom rule sets to verify the injection point works correctly, plus pack resolution and ruleOptions coverage.
 - CLI unit tests use `CliIO` injection and catch `CliExitError` for controlled exit assertions — no subprocess overhead.
 - CLI integration tests use `spawnSync` against the compiled `dist/bin.js` and are guarded by `describe.skipIf(!binExists)` so they are skipped in CI environments where the build has not yet run.
 - No snapshot tests — string content assertions are used so tests remain readable and refactor-friendly.
@@ -1065,30 +1287,34 @@ Both reporters receive plain value objects — they have no knowledge of how the
 
 `validateTrace()` collects every schema violation in a single pass before throwing. This means users see the complete picture in one error — all bad fields at once — rather than fixing one issue at a time. The structured `issues[]` array enables both human-readable terminal output and machine-readable `--json` error payloads from the same data.
 
-### 3. Rules are data, not classes
+### 3. Validate configuration at construction time
 
-Rules are plain object literals implementing a two-field interface. No abstract base classes, no inheritance, no decorators. This keeps rules trivially portable — a rule can live in a separate npm package, a private repository, or a local file.
+`RuleConfigurationError` is thrown by rule factories immediately when invalid options are detected — before any trace analysis begins. Configuration errors are distinct from data errors and should never be swallowed silently. By catching them at factory call time, the error message precisely identifies which rule and which option is invalid.
 
-### 4. The engine is a pure function
+### 4. Rules are data, not classes
+
+Rules are plain object literals implementing a two-field interface. No abstract base classes, no inheritance, no decorators. This keeps rules trivially portable — a rule can live in a separate npm package, a private repository, or a local file. Factories are plain functions that return these objects.
+
+### 5. The engine is a pure function
 
 `analyzeTrace()` takes a trace and options and returns a result. It has no global state, no module-level side effects, and no I/O. Calling it twice with the same input will always produce the same output.
 
-### 5. Diagnosis is a pure function
+### 6. Diagnosis is a pure function
 
 `diagnoseTrace()` takes an `AnalysisResult` and returns a `DiagnosisResult`. It has no global state, no I/O, and no external dependencies beyond `@rag-doctor/types`. Like `analyzeTrace`, it is safe to call from any host environment.
 
-### 6. Reporters are injectable
+### 7. Reporters are injectable
 
 All reporters accept a `write` function parameter. This decouples the formatting logic from process I/O, making reporters fully testable and reusable in non-terminal environments.
 
-### 7. Findings carry structured data
+### 8. Findings carry structured data
 
-Every `DiagnosticFinding` includes an optional `details` field for machine-readable context (e.g. which chunk IDs were duplicates, what the average score was). This allows programmatic consumers to act on findings without parsing human-readable messages.
+Every `DiagnosticFinding` includes an optional `details` field for machine-readable context (e.g. which chunk IDs were duplicates, what the average score was, and the **active threshold** that fired the rule). This allows programmatic consumers to act on findings without parsing human-readable messages.
 
-### 8. The CLI is an injectable seam
+### 9. The CLI is an injectable seam
 
 `CliIO` decouples process-level I/O from command logic. The production `processIO` object is swapped out in tests for a captured-output implementation, enabling fast in-process unit tests alongside the subprocess-based integration suite.
 
-### 9. Shared logic is extracted, not duplicated
+### 10. Shared logic is extracted, not duplicated
 
 The `loadAndAnalyze` helper in the CLI encapsulates the file-load → parse → ingest → analyze pipeline once. Both the `analyze` and `diagnose` commands call it, ensuring error messages, exit codes, and validation behavior remain identical across commands without copy-paste. The ingestion pipeline (`@rag-doctor/ingestion`) similarly centralizes validate + normalize in one place that CLI, SDK, and CI consumers all share.

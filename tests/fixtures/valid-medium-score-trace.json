@@ -1,0 +1,18 @@
+{
+  "query": "What causes headaches?",
+  "retrievedChunks": [
+    {
+      "id": "c1",
+      "text": "Dehydration is one of the most common causes of headaches.",
+      "score": 0.65,
+      "source": "health.md"
+    },
+    {
+      "id": "c2",
+      "text": "Stress and tension are known headache triggers.",
+      "score": 0.63,
+      "source": "wellness.md"
+    }
+  ],
+  "finalAnswer": "Dehydration and stress can both cause headaches."
+}

@@ -1,4 +1,5 @@
 import { AnalysisResult } from '@rag-doctor/types';
+import { AnalyzeOptions } from '@rag-doctor/core';
 import { DiagnosisResult } from '@rag-doctor/diagnostics';
 
 interface CliIO {
@@ -20,6 +21,8 @@ declare class CliExitError extends Error {
 interface CliFlags {
     json: boolean;
     help: boolean;
+    config: string | null;
+    format: string | null;
     unknownFlags: string[];
 }
 declare function parseArgs(args: string[]): {
@@ -27,17 +30,8 @@ declare function parseArgs(args: string[]): {
     positional: string[];
 };
 declare function buildHelpText(): string;
-declare function runAnalyzeCommand(filePath: string, flags: CliFlags, io: CliIO): AnalysisResult;
-declare function runDiagnoseCommand(filePath: string, flags: CliFlags, io: CliIO): DiagnosisResult;
-/**
- * Main CLI entry point. Accepts injectable I/O for testability.
- *
- * @example
- * ```ts
- * run(process.argv.slice(2));                  // production
- * run(["analyze", "trace.json"], testIO);      // test
- * ```
- */
+declare function runAnalyzeCommand(filePath: string, flags: CliFlags, io: CliIO, analyzeOptions?: AnalyzeOptions): AnalysisResult;
+declare function runDiagnoseCommand(filePath: string, flags: CliFlags, io: CliIO, analyzeOptions?: AnalyzeOptions): DiagnosisResult;
 declare function run(argv?: string[], io?: CliIO): void;
 
 export { CliExitError, type CliIO, buildHelpText, parseArgs, run, runAnalyzeCommand, runDiagnoseCommand };

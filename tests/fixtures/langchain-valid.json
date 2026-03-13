@@ -1,0 +1,8 @@
+{
+  "input": "How does chunking affect retrieval?",
+  "retrieverOutput": [
+    { "pageContent": "Smaller chunks may improve precision.", "metadata": { "source": "doc-1" }, "score": 0.72 },
+    { "pageContent": "Overly large chunks can dilute relevance.", "metadata": { "source": "doc-2" }, "score": 0.68 }
+  ],
+  "output": "Chunking strongly influences retrieval quality and context precision."
+}

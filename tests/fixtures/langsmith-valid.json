@@ -1,0 +1,18 @@
+{
+  "run_type": "chain",
+  "inputs": {
+    "question": "Why do duplicate chunks hurt RAG?"
+  },
+  "outputs": {
+    "answer": "Duplicate chunks waste context budget and reduce information diversity."
+  },
+  "retrieval": {
+    "documents": [
+      { "id": "doc-a", "content": "Duplicate chunks repeat the same context.", "score": 0.64, "source": "guide" },
+      { "id": "doc-b", "content": "They reduce prompt diversity.", "score": 0.59, "source": "notes" }
+    ]
+  },
+  "extra": {
+    "project": "rag-eval"
+  }
+}

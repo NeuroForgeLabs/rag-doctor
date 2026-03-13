@@ -25,6 +25,7 @@
     "start": "node dist/bin.js"
   },
   "dependencies": {
+    "@rag-doctor/adapters": "workspace:*",
     "@rag-doctor/core": "workspace:*",
     "@rag-doctor/diagnostics": "workspace:*",
     "@rag-doctor/ingestion": "workspace:*",

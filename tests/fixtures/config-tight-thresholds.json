@@ -1,0 +1,11 @@
+{
+  "packs": ["recommended"],
+  "ruleOptions": {
+    "low-retrieval-score": {
+      "averageScoreThreshold": 0.9
+    },
+    "context-overload": {
+      "maxChunkCount": 3
+    }
+  }
+}

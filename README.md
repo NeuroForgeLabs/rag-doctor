@@ -333,12 +333,215 @@ rag-doctor diagnose trace.json --json
 
 ## 🛡️ Built-in Diagnostic Rules
 
-| Rule ID | Severity | Threshold | Description |
+| Rule ID | Severity | Default Threshold | Description |
 |---|---|---|---|
 | `low-retrieval-score` | 🔴 high | avg score < 0.5 | Flags traces where chunks have poor relevance scores |
 | `duplicate-chunks` | 🟡 medium | Jaccard similarity ≥ 0.8 | Detects near-duplicate retrieved chunks |
 | `context-overload` | 🟡 medium | > 10 chunks | Flags traces with too many retrieved documents |
 | `oversized-chunk` | 🟢 low | text length > 1200 chars | Flags individual chunks that are too long |
+
+All thresholds are configurable. See [Configuring Rules](#️-configuring-rules) below.
+
+---
+
+## ⚙️ Configuring Rules
+
+RAG Doctor supports configurable rule thresholds and reusable rule packs.
+
+### Built-in packs
+
+| Pack | Description | Key differences from defaults |
+|---|---|---|
+| `recommended` | All rules with balanced defaults | Same as default behavior |
+| `strict` | All rules with tighter thresholds | `similarityThreshold: 0.7`, `averageScoreThreshold: 0.6`, `maxChunkLength: 1000`, `maxChunkCount: 8` |
+
+### Config file
+
+Create a `rag-doctor.config.json` file:
+
+```json
+{
+  "packs": ["recommended"],
+  "ruleOptions": {
+    "low-retrieval-score": {
+      "averageScoreThreshold": 0.6
+    },
+    "context-overload": {
+      "maxChunkCount": 8
+    }
+  }
+}
+```
+
+Pass it to any command with `--config`:
+
+```bash
+rag-doctor analyze trace.json --config rag-doctor.config.json
+rag-doctor diagnose trace.json --config rag-doctor.config.json
+```
+
+### Per-rule configurable options
+
+| Rule ID | Option | Type | Default | Constraint |
+|---|---|---|---|---|
+| `duplicate-chunks` | `similarityThreshold` | `number` | `0.8` | `> 0` and `<= 1` |
+| `low-retrieval-score` | `averageScoreThreshold` | `number` | `0.5` | `>= 0` and `<= 1` |
+| `oversized-chunk` | `maxChunkLength` | `integer` | `1200` | positive integer |
+| `context-overload` | `maxChunkCount` | `integer` | `10` | positive integer |
+
+### Strict pack example
+
+Use the built-in strict pack for more demanding quality gates:
+
+```bash
+# Create rag-doctor.config.json with strict pack
+echo '{ "packs": ["strict"] }' > rag-doctor.config.json
+rag-doctor analyze trace.json --config rag-doctor.config.json
+```
+
+### Programmatic usage with packs
+
+```typescript
+import { analyzeTrace } from "@rag-doctor/core";
+import { ingestTrace } from "@rag-doctor/ingestion";
+
+const trace = ingestTrace(rawJson);
+
+// Use the strict pack
+const result = analyzeTrace(trace, { packs: ["strict"] });
+
+// Use recommended pack with custom overrides
+const result2 = analyzeTrace(trace, {
+  packs: ["recommended"],
+  ruleOptions: {
+    "low-retrieval-score": { averageScoreThreshold: 0.6 },
+    "context-overload": { maxChunkCount: 8 },
+  },
+});
+```
+
+### Rule factories
+
+Each built-in rule can also be instantiated directly with typed options:
+
+```typescript
+import {
+  createLowRetrievalScoreRule,
+  createContextOverloadRule,
+  RuleConfigurationError,
+} from "@rag-doctor/rules";
+
+try {
+  const strictScoreRule = createLowRetrievalScoreRule({ averageScoreThreshold: 0.7 });
+  const tightOverloadRule = createContextOverloadRule({ maxChunkCount: 5 });
+  const result = analyzeTrace(trace, { rules: [strictScoreRule, tightOverloadRule] });
+} catch (err) {
+  if (err instanceof RuleConfigurationError) {
+    console.error(`Rule "${err.ruleId}": bad option "${err.optionKey}" — ${err.constraint}`);
+  }
+}
+```
+
+---
+
+## 🌐 Supported Trace Formats
+
+RAG Doctor supports multiple trace formats. The adapter layer auto-detects the format, or you can specify it explicitly with `--format`.
+
+### Canonical
+
+RAG Doctor's native format. Auto-detected when the input has `query` and `retrievedChunks`.
+
+```json
+{
+  "query": "What is RAG?",
+  "retrievedChunks": [{ "id": "c1", "text": "RAG is...", "score": 0.91 }],
+  "finalAnswer": "RAG is..."
+}
+```
+
+### Event-trace
+
+A generic event-based RAG trace. Auto-detected when the input has an `events` array.
+
+```json
+{
+  "events": [
+    { "type": "query.received", "query": "What is RAG?" },
+    { "type": "retrieval.completed", "chunks": [
+      { "id": "c1", "text": "RAG is...", "score": 0.91, "source": "wiki" }
+    ]},
+    { "type": "answer.generated", "answer": "RAG combines retrieval with generation." }
+  ],
+  "metadata": { "pipeline": "custom-rag" }
+}
+```
+
+### LangChain
+
+A simplified LangChain-style trace. Auto-detected when the input has `input` and `retrieverOutput`.
+
+```json
+{
+  "input": "How does chunking affect retrieval?",
+  "retrieverOutput": [
+    { "pageContent": "Smaller chunks improve precision.", "metadata": { "source": "doc-1" }, "score": 0.72 }
+  ],
+  "output": "Chunking strongly influences quality."
+}
+```
+
+### LangSmith
+
+A simplified LangSmith-inspired trace. Auto-detected when the input has `run_type`, `inputs`, and `outputs`.
+
+```json
+{
+  "run_type": "chain",
+  "inputs": { "question": "Why do duplicate chunks hurt RAG?" },
+  "outputs": { "answer": "Duplicate chunks waste context budget." },
+  "retrieval": {
+    "documents": [
+      { "id": "doc-a", "content": "Duplicates repeat context.", "score": 0.64, "source": "guide" }
+    ]
+  },
+  "extra": { "project": "rag-eval" }
+}
+```
+
+### CLI usage
+
+```bash
+# Auto-detect format (recommended)
+rag-doctor analyze trace.json
+
+# Explicit format
+rag-doctor analyze langchain-trace.json --format langchain
+rag-doctor diagnose langsmith-trace.json --format langsmith
+
+# Combine with other flags
+rag-doctor analyze trace.json --format event-trace --json
+rag-doctor analyze trace.json --format langchain --config rag-doctor.config.json
+```
+
+### Programmatic usage
+
+```typescript
+import { adaptTrace, detectTraceFormat } from "@rag-doctor/adapters";
+import { ingestTrace } from "@rag-doctor/ingestion";
+import { analyzeTrace } from "@rag-doctor/core";
+
+const rawJson = JSON.parse(fs.readFileSync("langchain-trace.json", "utf-8"));
+
+// Auto-detect and adapt
+const adapted = adaptTrace(rawJson);
+console.log(adapted.format);   // "langchain"
+console.log(adapted.warnings); // ["Generated deterministic IDs for 2 chunk(s)..."]
+
+// Ingest and analyze
+const trace = ingestTrace(adapted.trace);
+const result = analyzeTrace(trace);
+```
 
 ---
 
@@ -564,6 +767,32 @@ try {
 }
 ```
 
+### Using rule packs (Phase 3)
+
+```typescript
+import { ingestTrace } from "@rag-doctor/ingestion";
+import { analyzeTrace, RuleConfigurationError, UnknownPackError } from "@rag-doctor/core";
+import fs from "fs";
+
+const trace = ingestTrace(JSON.parse(fs.readFileSync("trace.json", "utf-8")));
+
+try {
+  const result = analyzeTrace(trace, {
+    packs: ["strict"],                 // use the strict built-in pack
+    ruleOptions: {
+      "low-retrieval-score": { averageScoreThreshold: 0.7 },  // override one threshold
+    },
+  });
+  console.log(result.summary);
+} catch (err) {
+  if (err instanceof UnknownPackError) {
+    console.error(`Unknown pack: ${err.packName}`);
+  } else if (err instanceof RuleConfigurationError) {
+    console.error(`Bad config for rule "${err.ruleId}": ${err.message}`);
+  }
+}
+```
+
 ### Using lower-level packages
 
 ```typescript
@@ -604,6 +833,7 @@ rag-doctor/
 │   └── cli/              # 📟 CLI entry point (published as `rag-doctor`)
 ├── packages/
 │   ├── types/            # 📐 Shared TypeScript interfaces
+│   ├── adapters/         # 🔌 External trace format adapters (canonical, event-trace, langchain, langsmith)
 │   ├── ingestion/        # 🔒 Shared trace ingestion pipeline (validate + normalize)
 │   ├── parser/           # 🔍 Trace normalizer & validator (legacy, used by ingestion)
 │   ├── rules/            # 📏 Built-in diagnostic rules
@@ -648,12 +878,14 @@ pnpm --filter rag-doctor test
 
 | Package | Tests | What's Covered |
 |---|---|---|
+| `@rag-doctor/adapters` | 69 | Format detection (canonical, event-trace, langchain, langsmith, unknown, priority), each adapter (valid input, missing fields, generated IDs, warnings, errors), integration with ingestion |
 | `@rag-doctor/parser` | 50 | Valid traces, optional fields, all `ParseError` paths, chunk-level validation, score edge cases (Infinity, NaN, 0, 1), metadata passthrough |
-| `@rag-doctor/rules` | 56 | Each rule: fires / does not fire, threshold boundaries, structured `details` fields, edge cases (empty list, no scores, casing) |
-| `@rag-doctor/core` | 23 | Return shape, summary accuracy, custom rule injection, multi-rule aggregation, real rule scenarios |
-| `@rag-doctor/reporters` | 29 | Header/structure, zero-findings message, severity labels, sort order, injected `write` |
-| `rag-doctor` (CLI) | 75 | Argument parsing, help display, error messages, analyze command, `--json` flag, exit codes, subprocess integration |
-| **Total** | **233** | |
+| `@rag-doctor/rules` | 114 | Each rule: fires / does not fire, threshold boundaries, structured `details` fields, edge cases; rule factories, custom thresholds, `RuleConfigurationError`, packs (`recommended`, `strict`), ruleOptions overrides |
+| `@rag-doctor/core` | 43 | Return shape, summary accuracy, custom rule injection, multi-rule aggregation, real rule scenarios; pack resolution, ruleOptions overrides, `UnknownPackError`, backward compatibility |
+| `@rag-doctor/ingestion` | 77 | Valid/invalid traces, schema validation, normalization, structured errors |
+| `@rag-doctor/reporters` | 52 | Header/structure, zero-findings message, severity labels, sort order, injected `write` |
+| `rag-doctor` (CLI) | 141 | Argument parsing, help display, error messages, analyze/diagnose commands, `--json` flag, exit codes, `--config`/`--format` flags, adapter integration, auto-detection, pack resolution, regression |
+| **Total** | **525+** | |
 
 ### Test fixtures
 
@@ -665,6 +897,7 @@ Fixture JSON files live in `tests/fixtures/`:
 | `valid-basic-trace.json` | Valid | Nothing — clean full trace with all optional fields |
 | `valid-minimal-trace.json` | Valid | Nothing — one chunk, no optional fields |
 | `valid-low-score-trace.json` | Valid | `low-retrieval-score` (HIGH) — valid trace with low scores |
+| `valid-medium-score-trace.json` | Valid | Nothing under default thresholds; `low-retrieval-score` (HIGH) under strict/tight config |
 | `broken-low-score-trace.json` | Valid | `low-retrieval-score` (HIGH) — avg score ≈ 0.22 |
 | `broken-duplicate-trace.json` | Valid | `duplicate-chunks` (MEDIUM) — 3 identical chunks |
 | `context-overload-trace.json` | Valid | `context-overload` (MEDIUM) — 12 retrieved chunks |
@@ -675,6 +908,20 @@ Fixture JSON files live in `tests/fixtures/`:
 | `invalid-missing-fields.json` | Invalid | Schema error — missing `query` and `retrievedChunks` |
 | `invalid-bad-score-type.json` | Invalid | Schema error — scores provided as strings instead of numbers |
 | `invalid-malformed-chunks.json` | Invalid | Schema error — chunks array contains primitives, nulls, nested arrays |
+| `config-recommended.json` | Config | `{ "packs": ["recommended"] }` |
+| `config-strict.json` | Config | `{ "packs": ["strict"] }` |
+| `config-tight-thresholds.json` | Config | `recommended` pack + tight thresholds (triggers on medium-score trace) |
+| `config-unknown-pack.json` | Config | Invalid — references nonexistent pack |
+| `config-invalid-option.json` | Config | Invalid — `maxChunkCount: 0` (must be positive) |
+| `config-invalid-json.json` | Config | Invalid — not valid JSON |
+| `config-not-object.json` | Config | Invalid — root value is an array, not an object |
+| `config-packs-not-array.json` | Config | Invalid — `packs` is a string instead of an array |
+| `event-trace-valid.json` | Adapter | Valid event-trace format (auto-detected) |
+| `langchain-valid.json` | Adapter | Valid LangChain format (auto-detected) |
+| `langsmith-valid.json` | Adapter | Valid LangSmith format (auto-detected) |
+| `unknown-format.json` | Adapter | Invalid — unrecognized format, falls through to ingestion validation |
+| `malformed-langchain.json` | Adapter | Invalid — LangChain-shaped but with wrong field types |
+| `malformed-event-trace.json` | Adapter | Invalid — event-trace shaped but events is a string |
 
 ### CLI test architecture
 

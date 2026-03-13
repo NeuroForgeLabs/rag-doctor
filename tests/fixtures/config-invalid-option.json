@@ -1,0 +1,8 @@
+{
+  "packs": ["recommended"],
+  "ruleOptions": {
+    "context-overload": {
+      "maxChunkCount": 0
+    }
+  }
+}

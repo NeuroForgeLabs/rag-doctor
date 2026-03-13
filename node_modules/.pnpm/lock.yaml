@@ -29,6 +29,9 @@ importers:
 
   apps/cli:
     dependencies:
+      '@rag-doctor/adapters':
+        specifier: workspace:*
+        version: link:../../packages/adapters
       '@rag-doctor/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -51,6 +54,25 @@ importers:
       '@types/node':
         specifier: ^25.5.0
         version: 25.5.0
+      tsup:
+        specifier: ^8.0.0
+        version: 8.5.1(postcss@8.5.8)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.5.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.0.0
+        version: 2.1.9(@types/node@25.5.0)
+
+  packages/adapters:
+    dependencies:
+      '@rag-doctor/types':
+        specifier: workspace:*
+        version: link:../types
+    devDependencies:
+      '@rag-doctor/ingestion':
+        specifier: workspace:*
+        version: link:../ingestion
       tsup:
         specifier: ^8.0.0
         version: 8.5.1(postcss@8.5.8)(typescript@5.9.3)
